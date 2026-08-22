@@ -24,10 +24,33 @@ const jetbrains = JetBrains_Mono({
   variable: "--font-jetbrains",
 });
 
-const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+/* Vercel sets NEXT_PUBLIC_APP_URL to an empty string when the value is blank in
+   the dashboard, and `new URL("")` throws at module scope — which kills page-data
+   collection for every route. Fall through anything that is not a parseable
+   absolute URL. */
+function resolveAppUrl(): URL {
+  const candidates = [
+    process.env.NEXT_PUBLIC_APP_URL,
+    process.env.VERCEL_PROJECT_PRODUCTION_URL,
+    process.env.VERCEL_URL,
+    "http://localhost:3000",
+  ];
+  for (const candidate of candidates) {
+    const value = candidate?.trim();
+    if (!value) continue;
+    try {
+      return new URL(/^https?:\/\//.test(value) ? value : `https://${value}`);
+    } catch {
+      continue;
+    }
+  }
+  return new URL("http://localhost:3000");
+}
+
+const appUrl = resolveAppUrl();
 
 export const metadata: Metadata = {
-  metadataBase: new URL(appUrl),
+  metadataBase: appUrl,
   title: "Onchain Spray",
   description:
     "Spray money onchain. Nigerian owambe culture at Monad speed — thousands of micro-transactions a minute.",
