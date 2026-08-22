@@ -29,6 +29,7 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { monadTestnet } from "../lib/chain";
 import { sprayPartyAbi } from "../lib/contract";
 import { ENDPOINTS } from "../lib/rpc";
+import { envOr } from "../lib/env";
 import {
   DENOMINATIONS,
   MAX_BATCH_SIZE,
@@ -112,7 +113,7 @@ async function main() {
       transport: http(rpc, { timeout: 20_000 }),
     });
 
-    const perBurner = parseEther(process.env.FUND_AMOUNT_MON ?? "0.35");
+    const perBurner = parseEther(envOr("FUND_AMOUNT_MON", "0.35"));
     const needed = perBurner * BigInt(CLIENTS);
     const balance = await publicClient.getBalance({ address: master.address });
 

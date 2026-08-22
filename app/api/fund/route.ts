@@ -4,6 +4,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { monadTestnet, httpClientFor, HTTP_TIMEOUT_MS } from "@/lib/chain";
 import { ENDPOINTS } from "@/lib/rpc";
 import { loadPrivateKey, keyErrorResponse } from "@/lib/server-key";
+import { envOr } from "@/lib/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,8 +22,27 @@ export const dynamic = "force-dynamic";
  * again when they run low, so MON follows actual tapping.
  */
 
-const FUND_AMOUNT = parseEther(process.env.FUND_AMOUNT_MON ?? "0.35");
-const TOTAL_CAP = parseEther(process.env.FUND_TOTAL_CAP_MON ?? "120");
+/* Parsed on first request rather than at import. These are real money knobs, so
+   a malformed value must fail loudly — but a throw at module scope fails the
+   production build instead of the request that set it wrong. */
+type Amounts = { fund: bigint; cap: bigint };
+let amounts: Amounts | null = null;
+function fundingAmounts(): Amounts | null {
+  if (!amounts) {
+    try {
+      amounts = {
+        fund: parseEther(envOr("FUND_AMOUNT_MON", "0.35")),
+        cap: parseEther(envOr("FUND_TOTAL_CAP_MON", "120")),
+      };
+    } catch {
+      return null;
+    }
+  }
+  return amounts;
+}
+
+const badConfig = () =>
+  NextResponse.json({ ok: false, error: "bad_funding_config" }, { status: 500 });
 
 /** A burner may be topped up this many times before we stop. */
 const MAX_GRANTS_PER_ADDRESS = 6;
@@ -83,6 +103,9 @@ export async function POST(req: Request) {
 
   const to = address as Address;
   const ip = clientIp(req);
+  const configured = fundingAmounts();
+  if (!configured) return badConfig();
+  const { fund: FUND_AMOUNT, cap: TOTAL_CAP } = configured;
 
   if (dispensed + FUND_AMOUNT > TOTAL_CAP) {
     return NextResponse.json({ ok: false, error: "budget_exhausted" }, { status: 429 });
@@ -168,6 +191,9 @@ export async function GET() {
   }
   const account = privateKeyToAccount(loaded.key);
   const publicClient = httpClientFor(ENDPOINTS[0].http);
+  const configured = fundingAmounts();
+  if (!configured) return badConfig();
+  const { fund: FUND_AMOUNT, cap: TOTAL_CAP } = configured;
   try {
     const balance = await publicClient.getBalance({ address: account.address });
     const perBurner = FUND_AMOUNT;
