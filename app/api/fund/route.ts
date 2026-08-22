@@ -3,6 +3,7 @@ import { createWalletClient, http, parseEther, formatEther, isAddress, type Addr
 import { privateKeyToAccount } from "viem/accounts";
 import { monadTestnet, httpClientFor, HTTP_TIMEOUT_MS } from "@/lib/chain";
 import { ENDPOINTS } from "@/lib/rpc";
+import { loadPrivateKey, keyErrorResponse } from "@/lib/server-key";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -62,12 +63,10 @@ function allow(map: Map<string, Grant>, key: string, max: number): boolean {
 }
 
 export async function POST(req: Request) {
-  const key = process.env.FUNDING_PRIVATE_KEY;
-  if (!key) {
-    return NextResponse.json(
-      { ok: false, error: "funding_not_configured" },
-      { status: 503 }
-    );
+  const loaded = loadPrivateKey();
+  if (!loaded.ok) {
+    const { body, status } = keyErrorResponse(loaded.reason);
+    return NextResponse.json(body, { status });
   }
 
   let address: string;
@@ -95,7 +94,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "ip_limit" }, { status: 429 });
   }
 
-  const account = privateKeyToAccount(key as `0x${string}`);
+  const account = privateKeyToAccount(loaded.key);
   const rpc = ENDPOINTS[0].http;
   const wallet = createWalletClient({
     account,
@@ -162,11 +161,12 @@ export async function POST(req: Request) {
 /** Lets the pre-flight checklist read the master wallet balance for real,
  *  rather than assuming it is funded. */
 export async function GET() {
-  const key = process.env.FUNDING_PRIVATE_KEY;
-  if (!key) {
-    return NextResponse.json({ ok: false, error: "funding_not_configured" }, { status: 503 });
+  const loaded = loadPrivateKey();
+  if (!loaded.ok) {
+    const { body, status } = keyErrorResponse(loaded.reason);
+    return NextResponse.json(body, { status });
   }
-  const account = privateKeyToAccount(key as `0x${string}`);
+  const account = privateKeyToAccount(loaded.key);
   const publicClient = httpClientFor(ENDPOINTS[0].http);
   try {
     const balance = await publicClient.getBalance({ address: account.address });

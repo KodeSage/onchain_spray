@@ -4,6 +4,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { monadTestnet, httpClientFor, HTTP_TIMEOUT_MS } from "@/lib/chain";
 import { ENDPOINTS } from "@/lib/rpc";
 import { assertContractConfigured, sprayPartyAbi } from "@/lib/contract";
+import { loadPrivateKey, keyErrorResponse } from "@/lib/server-key";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,9 +29,10 @@ let masterNonce = -1;
 let chain: Promise<unknown> = Promise.resolve();
 
 export async function POST(req: Request) {
-  const key = process.env.FUNDING_PRIVATE_KEY;
-  if (!key) {
-    return NextResponse.json({ ok: false, error: "not_configured" }, { status: 503 });
+  const loaded = loadPrivateKey();
+  if (!loaded.ok) {
+    const { body, status } = keyErrorResponse(loaded.reason);
+    return NextResponse.json(body, { status });
   }
 
   let partyId: number;
@@ -85,7 +87,7 @@ export async function POST(req: Request) {
 
   lastSweep.set(partyId, now);
 
-  const account = privateKeyToAccount(key as `0x${string}`);
+  const account = privateKeyToAccount(loaded.key);
   const wallet = createWalletClient({
     account,
     chain: monadTestnet,
