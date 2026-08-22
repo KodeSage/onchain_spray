@@ -44,3 +44,15 @@ export function formatMon(wei: bigint, decimals = 3): string {
   const whole = Number(wei) / 1e18;
   return `${whole.toFixed(decimals)} MON`;
 }
+
+/**
+ * Exact MON, with trailing zeros trimmed. Denominations are tiny (0.0002 MON),
+ * so a fixed 3-decimal format would render several of them as "0.000 MON".
+ * Derived from `value` rather than stored alongside it, so the label can never
+ * drift from the amount actually sprayed.
+ */
+export function formatMonExact(wei: bigint): string {
+  const whole = wei / 10n ** 18n;
+  const frac = (wei % 10n ** 18n).toString().padStart(18, "0").replace(/0+$/, "");
+  return frac.length > 0 ? `${whole}.${frac} MON` : `${whole} MON`;
+}

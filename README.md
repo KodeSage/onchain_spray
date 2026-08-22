@@ -29,6 +29,9 @@ Built in one day at **Monad Blitz Abuja**.
 4. **The event is the entire read API.** `Sprayed` carries `newTotal` and `count`
    in its payload, so the projector reconstructs the running total and the
    leaderboard from events alone — one websocket, no polling, no contract reads.
+   Party identity — the name and the host wallet sprays accumulate for — is read
+   once at mount from `partyInfo`, so nothing about the party is hardcoded in a
+   component.
 5. **Canvas particles, not DOM.** A preallocated pool of 3,000 note objects
    rendered on a Canvas 2D context. Nothing is allocated per spray.
 
@@ -57,10 +60,12 @@ cp .env.example .env          # Foundry reads .env
 ```
 
 Put a funded Monad testnet key in `.env` as `PRIVATE_KEY` (get MON from
-[faucet.monad.xyz](https://faucet.monad.xyz)), then:
+[faucet.monad.xyz](https://faucet.monad.xyz)). That wallet becomes the party
+host — the address sprays accumulate for, shown on both surfaces, and the only
+one that can `withdraw()`. Set `PARTY_NAME` to whoever is being sprayed. Then:
 
 ```bash
-npm run contracts:test        # 16 tests
+npm run contracts:test        # 19 tests
 npm run deploy                # deploys, verifies, writes the address to .env.local
 npm run dev
 ```
@@ -147,6 +152,7 @@ struct ordered so the three fields `spray()` touches — `active`, `total`,
 | `npm run rate-check` | simulates 130 clients against the endpoint pool |
 | `npm run load-test` | fires real sprays from funded burners; `--dry` to skip spending |
 | `npm run create-party "Name"` | opens a party from the CLI in ten seconds |
+| `npx tsx scripts/test-resilience.ts` | forces a 429 and a dead relay, checks recovery |
 | `npm run contracts:gas` | gas report plus the honest per-case measurement |
 
 ---

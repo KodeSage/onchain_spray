@@ -47,6 +47,16 @@ Banned on sight: purple-blue web3 gradients, glassmorphism, untouched shadcn
 defaults, stock crypto iconography, chain logos as decoration, animated
 node-network backgrounds.
 
+## Build
+
+Production builds use **webpack** (`next build`), not Turbopack. On Next 15.5.23
+`next build --turbopack` emits an incomplete `app-paths-manifest.json` and
+silently 404s `/api/relay`, `/styleguide` and `/opengraph-image` — the relay
+being missing would take the whole rate-limit strategy down at the venue. Dev
+still uses Turbopack, which is unaffected. Verify after any Next upgrade:
+
+    npx next build && cat .next/server/app-paths-manifest.json   # expect 9 routes
+
 ## Code standards
 
 - No `any`. No unhandled promise rejections.

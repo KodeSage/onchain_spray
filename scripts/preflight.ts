@@ -10,7 +10,7 @@
 
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { execSync } from "node:child_process";
-import { createPublicClient, http, formatEther, parseEther, type Address } from "viem";
+import { createPublicClient, http, formatEther, type Address } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { monadTestnet } from "../lib/chain";
 import { ENDPOINTS, getEndpoint } from "../lib/rpc";

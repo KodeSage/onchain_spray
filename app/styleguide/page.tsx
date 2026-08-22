@@ -1,4 +1,5 @@
 import { DENOMINATIONS } from "@/lib/constants";
+import { formatMonExact } from "@/lib/format";
 
 /**
  * Every token, rendered. This is how palette drift gets caught at hour six
@@ -94,7 +95,11 @@ export default function StyleGuide() {
           </div>
           <div>
             <p className="t-chip text-paper">₦500</p>
-            <p className="t-meta mt-2">denomination chip · JetBrains 700 · 13px</p>
+            <p className="t-meta">(0.0005 MON)</p>
+            <p className="t-meta mt-2">
+              denomination chip · JetBrains 700 · 13px, with the MON equivalent
+              beneath at 9px
+            </p>
           </div>
           <div>
             <p className="t-tap-label text-paper">tap to spray · hold to pour</p>
@@ -146,13 +151,19 @@ export default function StyleGuide() {
             <span
               key={d.id}
               className={[
-                "t-chip rounded-chip border px-8 py-4",
+                "rounded-chip border px-8 py-3 text-center",
                 i === 1
                   ? "border-green bg-green text-ink"
                   : "border-hairline bg-ink-4 text-text-2",
               ].join(" ")}
             >
-              {d.label}
+              <span className="t-chip block">{d.label}</span>
+              <span
+                className="t-meta mt-1 block"
+                style={i === 1 ? { color: "var(--color-ink)", opacity: 0.62 } : undefined}
+              >
+                ({formatMonExact(d.value)})
+              </span>
             </span>
           ))}
           <span className="t-chip rounded-chip border border-green-deep bg-green-deep px-8 py-4 text-paper">

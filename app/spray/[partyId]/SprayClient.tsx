@@ -10,8 +10,9 @@ import {
   type Denomination,
 } from "@/lib/constants";
 import { getBalance, initBurner, spray as sendSpray } from "@/lib/burner";
-import { formatNairaNumber, truncateAddress } from "@/lib/format";
+import { formatMonExact, formatNairaNumber, truncateAddress } from "@/lib/format";
 import { useEasedNumber } from "@/lib/hooks/useEasedNumber";
+import { useParty } from "@/lib/hooks/useParty";
 import NoteStack from "./NoteStack";
 
 type Phase = "booting" | "funding" | "ready" | "dry" | "error";
@@ -25,6 +26,7 @@ export default function SprayClient({ partyId }: { partyId: number }) {
   const [confirmed, setConfirmed] = useState(0);
   const [errorText, setErrorText] = useState("");
 
+  const { party } = useParty(partyId);
   const stackRef = useRef<{ peel: (big: boolean) => void }>(null);
   const denominationRef = useRef(denomination);
   denominationRef.current = denomination;
@@ -146,9 +148,15 @@ export default function SprayClient({ partyId }: { partyId: number }) {
     >
       {/* header */}
       <header className="flex items-start justify-between px-5 pt-[max(1rem,env(safe-area-inset-top))]">
-        <div>
-          <p className="t-party">party #{partyId}</p>
-          <p className="t-meta mt-1">spraying the dancer</p>
+        <div className="min-w-0">
+          <p className="t-party truncate">
+            {party.name || `party #${partyId}`}
+          </p>
+          <p className="t-meta mt-1 truncate">
+            {party.exists
+              ? `spraying ${truncateAddress(party.host)}`
+              : "spraying the dancer"}
+          </p>
         </div>
         <div className="text-right">
           <p className="t-meta">{address ? truncateAddress(address) : ""}</p>
@@ -181,13 +189,19 @@ export default function SprayClient({ partyId }: { partyId: number }) {
               }}
               aria-pressed={active}
               className={[
-                "t-chip flex-1 rounded-chip border py-4 transition-colors",
+                "flex-1 rounded-chip border py-3 transition-colors",
                 active
                   ? "border-green bg-green text-ink"
                   : "border-hairline bg-ink-4 text-text-2",
               ].join(" ")}
             >
-              {d.label}
+              <span className="t-chip block">{d.label}</span>
+              <span
+                className="t-meta mt-1 block"
+                style={active ? { color: "var(--color-ink)", opacity: 0.62 } : undefined}
+              >
+                ({formatMonExact(d.value)})
+              </span>
             </button>
           );
         })}

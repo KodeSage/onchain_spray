@@ -12,6 +12,7 @@ import { createParticleField, type ParticleField } from "@/lib/particles";
 import { startFeed, type FeedStatus, type SprayEvent } from "@/lib/stage-feed";
 import { formatCount, formatNairaNumber, truncateAddress, weiToNaira } from "@/lib/format";
 import { useEasedNumber } from "@/lib/hooks/useEasedNumber";
+import { useParty } from "@/lib/hooks/useParty";
 import JoinQr from "./JoinQr";
 
 type Leader = { address: Address; wei: bigint };
@@ -21,6 +22,11 @@ type BigSpray = { address: Address; wei: bigint; at: number };
 export default function StageClient({ partyId, demo }: { partyId: number; demo: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fieldRef = useRef<ParticleField | null>(null);
+
+  // demo mode has no contract to read, so it names itself
+  const { party } = useParty(partyId, {
+    fallbackName: demo ? "Owambe (demo)" : undefined,
+  });
 
   const [status, setStatus] = useState<FeedStatus>("connecting");
   const [totalWei, setTotalWei] = useState(0n);
@@ -164,7 +170,19 @@ export default function StageClient({ partyId, demo }: { partyId: number; demo: 
         <div className="flex items-start justify-between gap-12">
           {/* total sprayed — the biggest thing on screen */}
           <div>
-            <p className="t-section">total sprayed</p>
+            <p className="t-section">
+              {party.name || `party #${partyId}`}
+              {party.exists && (
+                <>
+                  {"  ·  "}
+                  <span style={{ color: "var(--color-green)" }}>
+                    {truncateAddress(party.host)}
+                  </span>
+                </>
+              )}
+              {party.exists && !party.active && "  ·  ENDED"}
+            </p>
+            <p className="t-section mt-8">total sprayed</p>
             <p className="t-total mt-3 text-paper">{formatNairaNumber(easedTotal)}</p>
 
             <div className="mt-10 flex items-end gap-14">

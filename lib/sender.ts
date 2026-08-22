@@ -237,6 +237,14 @@ export function createSender({ seed, fetchImpl, relayUrl }: SenderOptions): Send
         return;
       }
 
+      // A well-behaved endpoint returns one result per batch item. If a proxy
+      // truncates the response, the transactions were still sent — count them,
+      // rather than letting them vanish from the stats and read as a silent
+      // drop during the demo.
+      if (results.length < batch.length) {
+        stats.sent += batch.length - results.length;
+      }
+
       rotator.reportSuccess();
       batchWindow = BATCH_WINDOW_MS;
     } catch (err) {

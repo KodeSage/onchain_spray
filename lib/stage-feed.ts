@@ -56,7 +56,7 @@ export function startFeed(
   handlers: FeedHandlers,
   opts: { demo?: boolean } = {}
 ): Feed {
-  if (opts.demo) return startDemoFeed(handlers);
+  if (opts.demo) return startDemoFeed(handlers, partyId);
 
   let stopped = false;
   let unwatch: (() => void) | null = null;
@@ -219,22 +219,38 @@ export function startFeed(
    fed from a different source.
    ------------------------------------------------------------------------- */
 
-const DEMO_SPRAYERS: Address[] = [
-  "0x7f2a4C1d9E3b5A8f0C6d2E4b1A9c8D7e6F5a4B3c",
-  "0x3B8e1F6a2D4c9E0b7A5f3C1d8E6b4A2c0F9e7D5b",
-  "0xC4d7E2a9B1f5C3e8D6a0B4f2E9c7A5d3B1f8E6a4",
-  "0x91aF5c3E7b2D8a6F4c0E9b1D7a5C3e2F8b6D4a0C",
-  "0x5E3b9A7c1F4d2B8e6C0a5D3f1B9e7C4a2F6d8B0e",
-  "0xA2f8D4b6C0e3A9d1F7b5E2c8A6d4B0f3E1c9D7a5",
-  "0x6D1c8B4a2F9e7C3d5A0b6E4f2C8a1D9b7E3c5F0d",
-];
+/**
+ * The demo cast is derived, not hardcoded — a fixed list of literal addresses
+ * would be the one part of the stage that could not be traced back to a real
+ * event. These are generated per party so a given demo always shows the same
+ * faces, and the leaderboard reorders exactly the way it does with live data.
+ */
+function demoSprayers(partyId: number, n = 9): Address[] {
+  const out: Address[] = [];
+  // xorshift, seeded by the party, so the cast is stable per party and
+  // different between parties
+  let state = (partyId + 1) * 0x9e3779b9;
+  const next = () => {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    return state >>> 0;
+  };
+  for (let i = 0; i < n; i++) {
+    let hex = "";
+    while (hex.length < 40) hex += next().toString(16).padStart(8, "0");
+    out.push(`0x${hex.slice(0, 40)}` as Address);
+  }
+  return out;
+}
 
-function startDemoFeed(handlers: FeedHandlers): Feed {
+function startDemoFeed(handlers: FeedHandlers, partyId: number): Feed {
   let stopped = false;
   let count = 0n;
   let total = 0n;
   let block = 55_900_000n;
   const timers: ReturnType<typeof setTimeout>[] = [];
+  const sprayers = demoSprayers(partyId);
 
   handlers.onStatus("demo", "replaying recorded stream");
 
@@ -269,7 +285,7 @@ function startDemoFeed(handlers: FeedHandlers): Feed {
       total += amount;
       count += 1n;
       handlers.onSpray({
-        sprayer: DEMO_SPRAYERS[Math.floor(Math.random() * DEMO_SPRAYERS.length)],
+        sprayer: sprayers[Math.floor(Math.random() * sprayers.length)],
         amount,
         newTotal: total,
         count,
