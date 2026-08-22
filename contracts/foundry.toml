@@ -1,0 +1,20 @@
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.36"
+evm_version = "cancun"
+
+# spray() runs thousands of times a minute and the caller pays for the gas
+# LIMIT on Monad, so runtime gas is worth far more to us than deployment size.
+optimizer = true
+optimizer_runs = 1_000_000
+via_ir = true
+
+[rpc_endpoints]
+monad_testnet = "${MONAD_RPC_URL}"
+
+[fmt]
+line_length = 100
+tab_width = 4
+bracket_spacing = false

@@ -1,0 +1,175 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Onchain Spray — design tokens.
+   This block is authoritative. Never introduce a colour, size or font that is
+   not defined here. /styleguide renders every token in this file.
+   --------------------------------------------------------------------------- */
+
+@theme {
+  /* surfaces — dark is the default and only mode for both surfaces */
+  --color-ink:          #0B0B0C;   /* page background */
+  --color-ink-2:        #141416;   /* raised panel */
+  --color-ink-3:        #101012;   /* recessed, e.g. the tap region */
+  --color-ink-4:        #1C1C1F;   /* leaderboard row, chip inactive bg */
+  --color-hairline:     #232326;   /* borders on dark */
+
+  /* brand */
+  --color-green:        #16C77F;   /* primary accent, active states */
+  --color-green-deep:   #0E7A4E;   /* note edge, pressed states */
+  --color-gold:         #E8B33A;   /* tx/sec, big-spray takeover, alerts only */
+
+  /* naira notes — particle and stack rendering */
+  --color-note-fill:    #14361E;
+  --color-note-edge:    #1F6438;
+  --color-note-fill-hi: #1B4A28;   /* notes in flight, closer to camera */
+  --color-note-edge-hi: #20613A;
+  --color-note-dim:     #173B21;   /* far/background particles */
+
+  /* type on dark */
+  --color-paper:        #FAF7F0;   /* primary text, never pure white */
+  --color-text-2:       #9C9992;   /* secondary */
+  --color-text-3:       #8F8C86;   /* tertiary */
+  --color-text-4:       #6B6862;   /* labels, meta, smallest caps */
+
+  --color-danger:       #C0392B;   /* internal/debug only, never in the demo */
+
+  /* radii */
+  --radius-chip:   999px;
+  --radius-panel:  10px;
+  --radius-tap:    14px;
+
+  /* motion */
+  --ease-out:   cubic-bezier(0.16, 1, 0.3, 1);    /* counters, leaderboard moves */
+  --ease-tap:   cubic-bezier(0.34, 1.4, 0.64, 1); /* tap target press/release */
+  --dur-tap:    120ms;
+  --dur-count:  420ms;
+  --dur-row:    260ms;
+
+  /* faces — bound to next/font in app/layout.tsx */
+  --font-display: var(--font-archivo);
+  --font-sans:    var(--font-inter);
+  --font-mono:    var(--font-jetbrains);
+}
+
+/* ---------------------------------------------------------------------------
+   Base
+   --------------------------------------------------------------------------- */
+
+html {
+  background: var(--color-ink);
+  /* the projector is a fixed 16:9 surface; never bounce it */
+  overscroll-behavior: none;
+}
+
+body {
+  background: var(--color-ink);
+  color: var(--color-paper);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Every number that changes is tabular. No exceptions — proportional figures
+   jitter horizontally as an eased counter ticks, and on a projector that reads
+   as broken. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ---------------------------------------------------------------------------
+   Type scale — PHONE (/spray)
+   --------------------------------------------------------------------------- */
+
+.t-personal-total {
+  font-family: var(--font-display), sans-serif;
+  font-weight: 800;
+  font-size: 40px;
+  line-height: 1.0;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.t-chip {
+  font-family: var(--font-mono), monospace;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1.0;
+  text-transform: uppercase;
+}
+
+.t-tap-label {
+  font-family: var(--font-mono), monospace;
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.t-party {
+  font-family: var(--font-mono), monospace;
+  font-weight: 400;
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--color-text-4);
+}
+
+.t-meta {
+  font-family: var(--font-mono), monospace;
+  font-weight: 400;
+  font-size: 9px;
+  text-transform: uppercase;
+  color: var(--color-text-4);
+}
+
+/* ---------------------------------------------------------------------------
+   Type scale — PROJECTOR (/stage)
+   Sized for 1920x1080 viewed at 15m.
+   --------------------------------------------------------------------------- */
+
+.t-total {
+  font-family: var(--font-display), sans-serif;
+  font-weight: 900;
+  font-size: 128px;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.t-tps {
+  font-family: var(--font-display), sans-serif;
+  font-weight: 800;
+  font-size: 48px;
+  line-height: 1.0;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.t-section {
+  font-family: var(--font-mono), monospace;
+  font-weight: 400;
+  font-size: 18px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-4);
+}
+
+.t-lb-addr {
+  font-family: var(--font-mono), monospace;
+  font-weight: 400;
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.t-lb-value {
+  font-family: var(--font-mono), monospace;
+  font-weight: 700;
+  font-size: 24px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
