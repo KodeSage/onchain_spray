@@ -24,7 +24,7 @@ contract SprayGasTest is Test {
     function setUp() public {
         spray = new SprayParty();
         vm.prank(host);
-        partyId = spray.createParty(bytes32("Blitz Abuja"));
+        partyId = spray.createParty(bytes32("Blitz Abuja"), makeAddr("dancer"));
         vm.deal(alice, 100 ether);
 
         // Warm-up spray in setUp, so the measurement below sees cold-but-

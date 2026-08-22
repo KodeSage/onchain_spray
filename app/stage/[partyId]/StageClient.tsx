@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Address } from "viem";
+import { parseEther, type Address } from "viem";
 import {
   BIG_SPRAY_THRESHOLD,
   DENOMINATIONS,
@@ -145,6 +145,48 @@ export default function StageClient({ partyId, demo }: { partyId: number; demo: 
     return () => clearInterval(timer);
   }, []);
 
+  /* ---- auto payout ------------------------------------------------------
+     The money reaches the dancer while the room is still spraying, not after
+     everyone has gone home. payout() is permissionless and can only ever pay
+     the recipient fixed at creation, so the stage triggering it is safe — and
+     it means the dancer needs no gas and no wallet, just an address.
+
+     This is also why spray() does not forward per tap: a value-bearing call to
+     a cold account on every tap is ~19,000 extra gas on Monad, a ~32% increase
+     on the hot path. Sweeping on a timer costs one transaction per sweep. */
+  const [paidOut, setPaidOut] = useState(0n);
+
+  useEffect(() => {
+    if (demo) return;
+    let stopped = false;
+
+    const sweep = async () => {
+      try {
+        const res = await fetch("/api/payout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ partyId }),
+          signal: AbortSignal.timeout(20_000),
+        });
+        if (!res.ok || stopped) return;
+        const data = (await res.json()) as { ok: boolean; amount?: string };
+        if (data.ok && data.amount) {
+          // parseEther, not Number * 1e18 — the latter rounds through a float
+          // and the projector's paid-out total would drift over a long run
+          setPaidOut((v) => v + parseEther(data.amount as string));
+        }
+      } catch {
+        /* the next sweep tries again; nothing on screen depends on it */
+      }
+    };
+
+    const timer = setInterval(() => void sweep(), 10_000);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [partyId, demo]);
+
   /* ---- big spray takeover ---------------------------------------------- */
   useEffect(() => {
     if (!bigSpray) return;
@@ -174,9 +216,9 @@ export default function StageClient({ partyId, demo }: { partyId: number; demo: 
               {party.name || `party #${partyId}`}
               {party.exists && (
                 <>
-                  {"  ·  "}
+                  {"  ·  paying  "}
                   <span style={{ color: "var(--color-green)" }}>
-                    {truncateAddress(party.host)}
+                    {truncateAddress(party.recipient)}
                   </span>
                 </>
               )}
@@ -189,6 +231,12 @@ export default function StageClient({ partyId, demo }: { partyId: number; demo: 
               <div>
                 <p className="t-section">transactions</p>
                 <p className="t-tps mt-2 text-paper">{formatCount(easedCount)}</p>
+              </div>
+              <div>
+                <p className="t-section">paid out</p>
+                <p className="t-tps mt-2 text-green">
+                  {formatNairaNumber(weiToNaira(paidOut))}
+                </p>
               </div>
               <div>
                 <p className="t-section">status</p>

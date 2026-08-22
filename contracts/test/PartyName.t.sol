@@ -10,6 +10,7 @@ import {SprayParty} from "../src/SprayParty.sol";
 contract PartyNameTest is Test {
     SprayParty internal spray;
     address internal host = makeAddr("host");
+    address internal dancer = makeAddr("dancer");
 
     function setUp() public {
         spray = new SprayParty();
@@ -27,10 +28,11 @@ contract PartyNameTest is Test {
     function test_nameRoundTrips() public {
         string memory name = "Owambe at Blitz";
         vm.prank(host);
-        uint256 id = spray.createParty(bytes32(bytes(name)));
+        uint256 id = spray.createParty(bytes32(bytes(name)), dancer);
 
-        (address h, bytes32 stored, bool active, , ) = spray.partyInfo(id);
-        assertEq(h, host, "host is the wallet sprays accumulate for");
+        (address h, address r, bytes32 stored, bool active, , , ) = spray.partyInfo(id);
+        assertEq(h, host, "host created the party");
+        assertEq(r, dancer, "recipient is the wallet sprays are payable to");
         assertTrue(active);
         assertEq(stored, bytes32("Owambe at Blitz"));
 
@@ -46,8 +48,8 @@ contract PartyNameTest is Test {
         string memory name = "1234567890123456789012345678901";
         assertEq(bytes(name).length, 31);
         vm.prank(host);
-        uint256 id = spray.createParty(bytes32(bytes(name)));
-        (, bytes32 stored, , , ) = spray.partyInfo(id);
+        uint256 id = spray.createParty(bytes32(bytes(name)), dancer);
+        (, , bytes32 stored, , , , ) = spray.partyInfo(id);
         assertEq(uint8(stored[30]), uint8(bytes1("1")));
         assertEq(uint8(stored[31]), 0);
     }

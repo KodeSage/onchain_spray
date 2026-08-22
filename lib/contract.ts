@@ -27,6 +27,11 @@ export const sprayPartyAbi = [
         "name": "name",
         "type": "bytes32",
         "internalType": "bytes32"
+      },
+      {
+        "name": "recipient",
+        "type": "address",
+        "internalType": "address"
       }
     ],
     "outputs": [
@@ -71,6 +76,11 @@ export const sprayPartyAbi = [
         "name": "withdrawn",
         "type": "uint96",
         "internalType": "uint96"
+      },
+      {
+        "name": "recipient",
+        "type": "address",
+        "internalType": "address"
       },
       {
         "name": "name",
@@ -125,6 +135,11 @@ export const sprayPartyAbi = [
         "internalType": "address"
       },
       {
+        "name": "recipient",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
         "name": "name",
         "type": "bytes32",
         "internalType": "bytes32"
@@ -143,9 +158,27 @@ export const sprayPartyAbi = [
         "name": "count",
         "type": "uint64",
         "internalType": "uint64"
+      },
+      {
+        "name": "pending",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "payout",
+    "inputs": [
+      {
+        "name": "partyId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -185,17 +218,29 @@ export const sprayPartyAbi = [
     "stateMutability": "view"
   },
   {
-    "type": "function",
-    "name": "withdraw",
+    "type": "event",
+    "name": "PaidOut",
     "inputs": [
       {
         "name": "partyId",
         "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "recipient",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
         "internalType": "uint256"
       }
     ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
+    "anonymous": false
   },
   {
     "type": "event",
@@ -209,6 +254,12 @@ export const sprayPartyAbi = [
       },
       {
         "name": "host",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "recipient",
         "type": "address",
         "indexed": true,
         "internalType": "address"
@@ -279,31 +330,6 @@ export const sprayPartyAbi = [
     "anonymous": false
   },
   {
-    "type": "event",
-    "name": "Withdrawn",
-    "inputs": [
-      {
-        "name": "partyId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "host",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "amount",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
     "type": "error",
     "name": "NotHost",
     "inputs": []
@@ -321,6 +347,11 @@ export const sprayPartyAbi = [
   {
     "type": "error",
     "name": "TransferFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ZeroRecipient",
     "inputs": []
   },
   {

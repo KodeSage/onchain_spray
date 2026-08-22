@@ -154,7 +154,7 @@ export default function SprayClient({ partyId }: { partyId: number }) {
           </p>
           <p className="t-meta mt-1 truncate">
             {party.exists
-              ? `spraying ${truncateAddress(party.host)}`
+              ? `paying ${truncateAddress(party.recipient)}`
               : "spraying the dancer"}
           </p>
         </div>

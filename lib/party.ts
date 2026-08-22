@@ -22,11 +22,19 @@ export type Party = {
   id: number;
   /** decoded from bytes32; empty if the host left it blank */
   name: string;
-  /** the wallet the sprays accumulate for — "who is being sprayed" */
+  /** whoever opened the party */
   host: Address;
+  /**
+   * The person being sprayed. Every naira sprayed here is payable to this
+   * address and nobody else — it is submitted by the recipient themselves
+   * through the UI, fixed at creation, and immutable after.
+   */
+  recipient: Address;
   active: boolean;
   total: bigint;
   count: bigint;
+  /** sprayed but not yet swept to the recipient */
+  pending: bigint;
   exists: boolean;
 };
 
@@ -46,22 +54,25 @@ export async function fetchParty(partyId: number): Promise<Party | null> {
 
   try {
     const client = httpClientFor(ENDPOINTS[0].http);
-    const [host, name, active, total, count] = await client.readContract({
-      address: SPRAY_CONTRACT,
-      abi: sprayPartyAbi,
-      functionName: "partyInfo",
-      args: [BigInt(partyId)],
-    });
+    const [host, recipient, name, active, total, count, pending] =
+      await client.readContract({
+        address: SPRAY_CONTRACT,
+        abi: sprayPartyAbi,
+        functionName: "partyInfo",
+        args: [BigInt(partyId)],
+      });
 
     return {
       id: partyId,
       name: decodePartyName(name),
       host,
+      recipient,
       active,
       total,
       count,
+      pending,
       // a party that was never created reads back as the zero address
-      exists: host.toLowerCase() !== ZERO,
+      exists: recipient.toLowerCase() !== ZERO,
     };
   } catch {
     return null;
@@ -74,9 +85,11 @@ export function placeholderParty(partyId: number): Party {
     id: partyId,
     name: "",
     host: ZERO as Address,
+    recipient: ZERO as Address,
     active: true,
     total: 0n,
     count: 0n,
+    pending: 0n,
     exists: false,
   };
 }

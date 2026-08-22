@@ -17,6 +17,10 @@ Built in one day at **Monad Blitz Abuja**.
    key with viem, stores it in `localStorage`, and gets a small drip of testnet
    MON from `/api/fund`. Nothing is ever confirmed by the user, because the key
    is local. This is the whole trick.
+   The person *being* sprayed needs even less: they type their wallet address on
+   the landing page, `/api/create-party` opens a party for them, and every naira
+   sprayed there is payable to that address on chain. No extension, no gas, no
+   signature — on either side of the transaction.
 2. **The tap path touches the network zero times.** A nonce comes from a local
    counter, the transaction is signed locally (p95 **0.51ms**), and the signed
    payload goes on a queue. No `eth_estimateGas`, no fee lookup, no nonce fetch,
@@ -65,7 +69,7 @@ host — the address sprays accumulate for, shown on both surfaces, and the only
 one that can `withdraw()`. Set `PARTY_NAME` to whoever is being sprayed. Then:
 
 ```bash
-npm run contracts:test        # 19 tests
+npm run contracts:test        # 21 tests
 npm run deploy                # deploys, verifies, writes the address to .env.local
 npm run dev
 ```
@@ -104,8 +108,10 @@ Two things reduce the number:
 - **Funding is lazy.** `/api/fund` tops burners up when they run low rather than
   granting everyone a fixed amount up front. Of 130 people who scan, only some
   tap hard, so MON follows actual tapping.
-- **The sprayed value comes back.** Only gas is truly burned — the sprayed MON
-  accumulates in the contract and the host pulls it with `withdraw()`.
+- **The sprayed value goes to the dancer.** Only gas is truly burned. Sprays
+  accumulate in the contract and `/api/payout` sweeps them to the recipient
+  every 10 seconds, so the money lands in their wallet while the room is still
+  spraying.
 
 Verify the wallet by reading its balance, never by assuming:
 
@@ -151,7 +157,7 @@ struct ordered so the three fields `spray()` touches — `active`, `total`,
 | `npm run bench` | measures tap-path latency and the offline demo feed |
 | `npm run rate-check` | simulates 130 clients against the endpoint pool |
 | `npm run load-test` | fires real sprays from funded burners; `--dry` to skip spending |
-| `npm run create-party "Name"` | opens a party from the CLI in ten seconds |
+| `npm run create-party "Name" 0xRecipient` | opens a party from the CLI in ten seconds |
 | `npx tsx scripts/test-resilience.ts` | forces a 429 and a dead relay, checks recovery |
 | `npm run contracts:gas` | gas report plus the honest per-case measurement |
 
@@ -182,14 +188,25 @@ plan.**
 `contracts/src/SprayParty.sol` — deployed on Monad testnet (chain 10143).
 
 ```
-createParty(bytes32 name) -> uint256 partyId
+createParty(bytes32 name, address recipient) -> uint256 partyId
 spray(uint256 partyId) payable
-withdraw(uint256 partyId)     host only
+payout(uint256 partyId)       permissionless — always pays `recipient`
 endParty(uint256 partyId)     host only
 
 event Sprayed(uint256 indexed partyId, address indexed sprayer,
               uint256 amount, uint256 newTotal, uint64 count)
+event PartyCreated(uint256 indexed partyId, address indexed host,
+                   address indexed recipient, bytes32 name)
 ```
+
+`recipient` is set once at creation and is immutable. `payout` is deliberately
+permissionless: the funds can only ever reach that address, so letting the stage
+trigger the sweep on a timer is free and means the dancer needs no gas.
+
+`spray()` deliberately does **not** forward per tap. A value-bearing call to a
+cold account on every tap is ~19,000 extra gas on Monad — a ~32% increase on a
+function called thousands of times a minute, plus reentrancy surface on the
+hottest path in the system. Sweeping on a timer costs one transaction per sweep.
 
 Address and explorer link are written into `.env.local` by `npm run deploy`.
 

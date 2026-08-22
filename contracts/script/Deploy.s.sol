@@ -23,13 +23,17 @@ contract Deploy is Script {
         deployed = new SprayParty();
 
         // Open the first party in the same broadcast, so the stage has
-        // something to point at the moment the deploy finishes. The host is the
-        // deployer — that is the wallet the sprays accumulate for.
-        uint256 partyId = deployed.createParty(bytes32(bytes(name)));
+        // something to point at the moment the deploy finishes. RECIPIENT is
+        // whoever is being sprayed tonight — the deployer only by default. In
+        // the real flow the dancer submits their own address through the UI and
+        // /api/create-party opens a party for them.
+        address recipient = vm.envOr("PARTY_RECIPIENT", deployer);
+        uint256 partyId = deployed.createParty(bytes32(bytes(name)), recipient);
         vm.stopBroadcast();
 
         console.log("party    :", name);
         console.log("host     :", deployer);
+        console.log("recipient:", recipient);
 
         console.log("SprayParty:", address(deployed));
         console.log("partyId   :", partyId);

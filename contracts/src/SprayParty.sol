@@ -18,13 +18,16 @@ pragma solidity ^0.8.24;
 contract SprayParty {
     /// @dev Storage layout, and why:
     ///        slot 0 | host (20 bytes) + withdrawn (12 bytes)  -- exactly full
-    ///        slot 1 | name (bytes32)
-    ///        slot 2 | active (1) + total (16) + count (8)      -- the hot slot
-    ///      spray() reads and writes slot 2 and nothing else in this struct:
-    ///      one cold SLOAD, one warm SSTORE.
+    ///        slot 1 | recipient (20 bytes)
+    ///        slot 2 | name (bytes32)
+    ///        slot 3 | active (1) + total (16) + count (8)      -- the hot slot
+    ///      spray() reads and writes slot 3 and nothing else in this struct:
+    ///      one cold SLOAD, one warm SSTORE. recipient deliberately lives in its
+    ///      own slot outside the hot path, so adding it costs spray() nothing.
     struct Party {
         address host;
         uint96 withdrawn;
+        address recipient;
         bytes32 name;
         bool active;
         uint128 total;
@@ -48,24 +51,41 @@ contract SprayParty {
         uint64 count
     );
 
-    event PartyCreated(uint256 indexed partyId, address indexed host, bytes32 name);
+    event PartyCreated(
+        uint256 indexed partyId,
+        address indexed host,
+        address indexed recipient,
+        bytes32 name
+    );
     event PartyEnded(uint256 indexed partyId, uint256 total);
-    event Withdrawn(uint256 indexed partyId, address indexed host, uint256 amount);
+    event PaidOut(uint256 indexed partyId, address indexed recipient, uint256 amount);
 
     error NotHost();
+    error ZeroRecipient();
     error PartyInactive();
     error ZeroValue();
     error NothingToWithdraw();
     error TransferFailed();
 
-    /// @notice Open a party. Returns its id.
-    function createParty(bytes32 name) external returns (uint256 partyId) {
+    /// @notice Open a party.
+    /// @param name  Display name, shown on both surfaces.
+    /// @param recipient The person being sprayed. Every naira sprayed at this
+    ///        party is payable to this address and to nobody else — not the
+    ///        host, not the deployer. Set once, at creation, and immutable
+    ///        after, so the room can see who they are spraying and be right.
+    function createParty(bytes32 name, address recipient)
+        external
+        returns (uint256 partyId)
+    {
+        if (recipient == address(0)) revert ZeroRecipient();
+
         partyId = partyCount++;
         Party storage p = parties[partyId];
         p.host = msg.sender;
+        p.recipient = recipient;
         p.name = name;
         p.active = true;
-        emit PartyCreated(partyId, msg.sender, name);
+        emit PartyCreated(partyId, msg.sender, recipient, name);
     }
 
     /// @notice Spray. This is the hot path — everything else exists to serve it.
@@ -91,10 +111,22 @@ contract SprayParty {
         emit Sprayed(partyId, msg.sender, msg.value, newTotal, newCount);
     }
 
-    /// @notice Host pulls accumulated funds. Not callable during the hot path.
-    function withdraw(uint256 partyId) external {
+    /// @notice Push everything sprayed so far to the recipient.
+    /// @dev Deliberately permissionless. The funds can only ever go to the
+    ///      recipient fixed at creation, so letting anyone trigger the push
+    ///      costs nothing and buys a lot: the stage calls this on a timer, and
+    ///      the money lands in the dancer's wallet while the room is still
+    ///      spraying, without the recipient needing gas or a wallet popup.
+    ///
+    ///      This is why spray() does not forward. A transfer inside spray()
+    ///      would add a value-bearing CALL to a cold account on every single
+    ///      tap — roughly 19,000 extra gas on Monad, a ~32% increase on a
+    ///      function called thousands of times a minute, plus reentrancy
+    ///      surface. Sweeping on a timer costs one transaction per sweep.
+    function payout(uint256 partyId) external {
         Party storage p = parties[partyId];
-        if (msg.sender != p.host) revert NotHost();
+        address recipient = p.recipient;
+        if (recipient == address(0)) revert ZeroRecipient();
 
         uint256 available = uint256(p.total) - uint256(p.withdrawn);
         if (available == 0) revert NothingToWithdraw();
@@ -106,10 +138,10 @@ contract SprayParty {
         // forge-lint: disable-next-line(unsafe-typecast)
         p.withdrawn = uint96(uint256(p.withdrawn) + available);
 
-        (bool ok, ) = msg.sender.call{value: available}("");
+        (bool ok, ) = recipient.call{value: available}("");
         if (!ok) revert TransferFailed();
 
-        emit Withdrawn(partyId, msg.sender, available);
+        emit PaidOut(partyId, recipient, available);
     }
 
     function endParty(uint256 partyId) external {
@@ -123,9 +155,25 @@ contract SprayParty {
     function partyInfo(uint256 partyId)
         external
         view
-        returns (address host, bytes32 name, bool active, uint256 total, uint64 count)
+        returns (
+            address host,
+            address recipient,
+            bytes32 name,
+            bool active,
+            uint256 total,
+            uint64 count,
+            uint256 pending
+        )
     {
         Party storage p = parties[partyId];
-        return (p.host, p.name, p.active, p.total, p.count);
+        return (
+            p.host,
+            p.recipient,
+            p.name,
+            p.active,
+            p.total,
+            p.count,
+            uint256(p.total) - uint256(p.withdrawn)
+        );
     }
 }
