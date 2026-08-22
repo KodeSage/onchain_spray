@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { parseEther, type Address } from "viem";
+import type { Address } from "viem";
 import {
   BIG_SPRAY_THRESHOLD,
   DENOMINATIONS,
@@ -24,8 +24,11 @@ export default function StageClient({ partyId, demo }: { partyId: number; demo: 
   const fieldRef = useRef<ParticleField | null>(null);
 
   // demo mode has no contract to read, so it names itself
-  const { party } = useParty(partyId, {
+  const { party, refresh: refreshParty } = useParty(partyId, {
     fallbackName: demo ? "Owambe (demo)" : undefined,
+    // re-anchor total / count / paid-out to chain. Not the hot path: the
+    // per-spray numbers still arrive as events.
+    refreshMs: demo ? undefined : 8_000,
   });
 
   const [status, setStatus] = useState<FeedStatus>("connecting");
@@ -34,6 +37,8 @@ export default function StageClient({ partyId, demo }: { partyId: number; demo: 
   const [tps, setTps] = useState(0);
   const [leaders, setLeaders] = useState<Leader[]>([]);
   const [bigSpray, setBigSpray] = useState<BigSpray | null>(null);
+  /** what the recipient has actually been paid, derived from chain */
+  const [paidOut, setPaidOut] = useState(0n);
   const [fps, setFps] = useState(60);
 
   // kept in refs: these mutate hundreds of times a second and must not each
@@ -107,6 +112,11 @@ export default function StageClient({ partyId, demo }: { partyId: number; demo: 
     const map = totalsRef.current;
     map.set(key, (map.get(key) ?? 0n) + e.amount);
 
+    // Replayed sprays rebuild the leaderboard and nothing else. They already
+    // happened: throwing their notes now would bury the screen on every reload,
+    // and counting them toward tx/sec would show a rate nobody is producing.
+    if (e.historical) return;
+
     recentRef.current.push(e.at);
 
     const big = e.amount >= BIG_SPRAY_THRESHOLD * 2n;
@@ -145,6 +155,23 @@ export default function StageClient({ partyId, demo }: { partyId: number; demo: 
     return () => clearInterval(timer);
   }, []);
 
+  /* ---- seed from chain so a reload does not show zero -------------------
+     total, count and pending are the authoritative record of what the room has
+     sprayed and what the dancer has been paid. Reading them means the stage can
+     be reloaded — or opened on a second screen, or recovered after a crash —
+     and immediately shows the real numbers instead of counting up from nothing.
+
+     paid out = total - pending, straight from the contract. Accumulating the
+     amounts returned by /api/payout instead would reset on reload and drift
+     from chain over a long party. */
+  useEffect(() => {
+    if (!party.exists) return;
+    setTotalWei((prev) => (party.total > prev ? party.total : prev));
+    setTxCount((prev) => (Number(party.count) > prev ? Number(party.count) : prev));
+    const received = party.total - party.pending;
+    setPaidOut((prev) => (received > prev ? received : prev));
+  }, [party.exists, party.total, party.count, party.pending]);
+
   /* ---- auto payout ------------------------------------------------------
      The money reaches the dancer while the room is still spraying, not after
      everyone has gone home. payout() is permissionless and can only ever pay
@@ -154,8 +181,6 @@ export default function StageClient({ partyId, demo }: { partyId: number; demo: 
      This is also why spray() does not forward per tap: a value-bearing call to
      a cold account on every tap is ~19,000 extra gas on Monad, a ~32% increase
      on the hot path. Sweeping on a timer costs one transaction per sweep. */
-  const [paidOut, setPaidOut] = useState(0n);
-
   useEffect(() => {
     if (demo) return;
     let stopped = false;
@@ -170,11 +195,10 @@ export default function StageClient({ partyId, demo }: { partyId: number; demo: 
         });
         if (!res.ok || stopped) return;
         const data = (await res.json()) as { ok: boolean; amount?: string };
-        if (data.ok && data.amount) {
-          // parseEther, not Number * 1e18 — the latter rounds through a float
-          // and the projector's paid-out total would drift over a long run
-          setPaidOut((v) => v + parseEther(data.amount as string));
-        }
+        // Re-read rather than adding the swept amount locally: the contract is
+        // the only thing that knows what actually landed, and a local running
+        // sum would drift and reset on reload.
+        if (data.ok && data.amount) refreshParty();
       } catch {
         /* the next sweep tries again; nothing on screen depends on it */
       }
@@ -185,7 +209,7 @@ export default function StageClient({ partyId, demo }: { partyId: number; demo: 
       stopped = true;
       clearInterval(timer);
     };
-  }, [partyId, demo]);
+  }, [partyId, demo, refreshParty]);
 
   /* ---- big spray takeover ---------------------------------------------- */
   useEffect(() => {
@@ -233,7 +257,7 @@ export default function StageClient({ partyId, demo }: { partyId: number; demo: 
                 <p className="t-tps mt-2 text-paper">{formatCount(easedCount)}</p>
               </div>
               <div>
-                <p className="t-section">paid out</p>
+                <p className="t-section">received</p>
                 <p className="t-tps mt-2 text-green">
                   {formatNairaNumber(weiToNaira(paidOut))}
                 </p>

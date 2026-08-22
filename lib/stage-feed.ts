@@ -31,6 +31,13 @@ export type SprayEvent = {
   txHash: Hex;
   /** local arrival time, used for the tx/sec window */
   at: number;
+  /**
+   * Replayed from the log on a cold load rather than arriving live. The stage
+   * must fold these into the leaderboard but must NOT spawn particles for them
+   * or count them toward tx/sec — a reload would otherwise dump thousands of
+   * notes on screen at once and spike the rate to a number nobody earned.
+   */
+  historical: boolean;
 };
 
 export type FeedStatus =
@@ -51,10 +58,17 @@ export type Feed = { stop: () => void };
 const POLL_INTERVAL_MS = 900;
 const MAX_BACKOFF_MS = 8_000;
 
+/** getLogs window per request. Kept small so no single call is rejected. */
+const HISTORY_CHUNK = 2_000n;
+/** How far back to rebuild the leaderboard from on a cold load. At ~400ms
+ *  blocks this is a little over two hours — longer than any demo, short enough
+ *  to finish while the projector is warming up. */
+const HISTORY_LOOKBACK = 20_000n;
+
 export function startFeed(
   partyId: number,
   handlers: FeedHandlers,
-  opts: { demo?: boolean } = {}
+  opts: { demo?: boolean; history?: boolean } = {}
 ): Feed {
   if (opts.demo) return startDemoFeed(handlers, partyId);
 
@@ -68,6 +82,7 @@ export function startFeed(
   const http = httpClientFor(ENDPOINTS[0].http);
 
   function emit(
+    historical: boolean,
     logs: readonly {
       args: { sprayer?: Address; amount?: bigint; newTotal?: bigint; count?: bigint };
       blockNumber: bigint | null;
@@ -85,8 +100,12 @@ export function startFeed(
       seen.add(key);
       if (seen.size > 50_000) seen.clear();
 
-      if (log.blockNumber !== null) {
-        lastBlock = lastBlock === null || log.blockNumber > lastBlock ? log.blockNumber : lastBlock;
+      // Replay must not move the live cursor: connectWs anchors lastBlock to
+      // the head, and letting a historical block pull it backwards would make
+      // the next reconnect re-scan hours of logs.
+      if (!historical && log.blockNumber !== null) {
+        lastBlock =
+          lastBlock === null || log.blockNumber > lastBlock ? log.blockNumber : lastBlock;
       }
 
       handlers.onSpray({
@@ -97,6 +116,7 @@ export function startFeed(
         blockNumber: log.blockNumber ?? 0n,
         txHash: log.transactionHash ?? ("0x" as Hex),
         at: Date.now(),
+        historical,
       });
     }
   }
@@ -114,7 +134,7 @@ export function startFeed(
         fromBlock: lastBlock + 1n,
         toBlock: current,
       });
-      emit(logs);
+      emit(false, logs);
     } catch {
       /* the next reconnect tries again */
     }
@@ -138,7 +158,7 @@ export function startFeed(
         args: { partyId: BigInt(partyId) },
         onLogs: (logs) => {
           attempt = 0;
-          emit(logs);
+          emit(false, logs);
         },
         onError: () => {
           if (stopped) return;
@@ -191,7 +211,7 @@ export function startFeed(
             toBlock: current,
           });
           lastBlock = current;
-          emit(logs);
+          emit(false, logs);
         } catch {
           /* keep polling; a blip is not a failure */
         }
@@ -199,6 +219,40 @@ export function startFeed(
     }, POLL_INTERVAL_MS);
   }
 
+  /**
+   * Replay past sprays on a cold load.
+   *
+   * The running total and transaction count come back from partyInfo, but the
+   * leaderboard cannot — it is a per-address sum that only exists in the event
+   * log. Without this a browser reload mid-party shows an empty leaderboard
+   * until five more people spray, which on a projector looks broken.
+   *
+   * Best-effort by design: if the RPC refuses the range, the live feed still
+   * works and the leaderboard simply rebuilds from now on.
+   */
+  async function replayHistory() {
+    try {
+      const head = await http.getBlockNumber();
+      const earliest = head > HISTORY_LOOKBACK ? head - HISTORY_LOOKBACK : 0n;
+
+      for (let from = earliest; from <= head; from += HISTORY_CHUNK) {
+        if (stopped) return;
+        const to = from + HISTORY_CHUNK - 1n > head ? head : from + HISTORY_CHUNK - 1n;
+        const logs = await http.getLogs({
+          address: SPRAY_CONTRACT,
+          event: sprayedEventAbi,
+          args: { partyId: BigInt(partyId) },
+          fromBlock: from,
+          toBlock: to,
+        });
+        if (logs.length > 0) emit(true, logs);
+      }
+    } catch {
+      /* live feed carries on; the leaderboard just starts from now */
+    }
+  }
+
+  if (opts.history !== false) void replayHistory();
   void connectWs();
 
   return {
@@ -292,6 +346,7 @@ function startDemoFeed(handlers: FeedHandlers, partyId: number): Feed {
         blockNumber: block,
         txHash: `0x${count.toString(16).padStart(64, "0")}` as Hex,
         at: Date.now(),
+        historical: false,
       });
     }
 
