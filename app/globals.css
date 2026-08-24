@@ -1,43 +1,53 @@
 @import "tailwindcss";
 
 /* ---------------------------------------------------------------------------
-   Onchain Spray — design tokens.
+   Tap — design tokens.
    This block is authoritative. Never introduce a colour, size or font that is
    not defined here. /styleguide renders every token in this file.
    --------------------------------------------------------------------------- */
 
 @theme {
-  /* surfaces — dark is the default and only mode for both surfaces */
-  --color-ink:          #0B0B0C;   /* page background */
-  --color-ink-2:        #141416;   /* raised panel */
-  --color-ink-3:        #101012;   /* recessed, e.g. the tap region */
-  --color-ink-4:        #1C1C1F;   /* leaderboard row, chip inactive bg */
-  --color-hairline:     #232326;   /* borders on dark */
+  /* surfaces — dark is the only mode */
+  --color-ink:          #08080A;   /* page background */
+  --color-ink-2:        #101014;   /* raised panel */
+  --color-ink-3:        #0C0C10;   /* recessed, e.g. the tap region */
+  --color-ink-4:        #17171D;   /* leaderboard row, chip inactive bg */
+  --color-hairline:     #232329;   /* borders on dark */
+  --color-hairline-hot: #33304A;   /* border on an active/own row */
 
-  /* brand */
-  --color-green:        #16C77F;   /* primary accent, active states */
-  --color-green-deep:   #0E7A4E;   /* note edge, pressed states */
-  --color-gold:         #E8B33A;   /* tx/sec, big-spray takeover, alerts only */
+  /* brand — Monad violet is the primary accent; this is an ecosystem product.
+     Flat fills only. A violet-to-blue gradient is the banned thing, not the
+     colour itself. */
+  --color-violet:       #836EF9;
+  --color-violet-deep:  #5A46C8;   /* pressed states, droplet edges */
+  --color-violet-lift:  #9C8BFF;   /* hover, near droplets */
 
-  /* naira notes — particle and stack rendering */
-  --color-note-fill:    #14361E;
-  --color-note-edge:    #1F6438;
-  --color-note-fill-hi: #1B4A28;   /* notes in flight, closer to camera */
-  --color-note-edge-hi: #20613A;
-  --color-note-dim:     #173B21;   /* far/background particles */
+  /* the water half of the palette — live state, combo, anything flowing */
+  --color-aqua:         #3FE0D0;
+  --color-aqua-lift:    #7FE9DC;
+
+  /* reserved for records, round rollover and budget warnings. Never decoration. */
+  --color-amber:        #F5B33C;
+
+  /* droplets — particle rendering. Mirrored in lib/particles.ts, which cannot
+     read CSS variables from inside a canvas draw call. */
+  --color-drop:         #9C8BFF;
+  --color-drop-edge:    #6B55E0;
+  --color-drop-dim:     #4A3E8F;
+  --color-drop-hot:     #7FE9DC;
 
   /* type on dark */
-  --color-paper:        #FAF7F0;   /* primary text, never pure white */
-  --color-text-2:       #9C9992;   /* secondary */
-  --color-text-3:       #8F8C86;   /* tertiary */
-  --color-text-4:       #6B6862;   /* labels, meta, smallest caps */
+  --color-paper:        #F5F3FF;   /* primary text, never pure white */
+  --color-text-2:       #A5A2B8;   /* secondary */
+  --color-text-3:       #8B8899;   /* tertiary */
+  --color-text-4:       #6A6878;   /* labels, meta, smallest caps */
 
-  --color-danger:       #C0392B;   /* internal/debug only, never in the demo */
+  --color-danger:       #E0524A;   /* claim failures and budget exhaustion */
 
   /* radii */
   --radius-chip:   999px;
-  --radius-panel:  10px;
-  --radius-tap:    14px;
+  --radius-panel:  12px;
+  --radius-tap:    20px;
 
   /* motion */
   --ease-out:   cubic-bezier(0.16, 1, 0.3, 1);    /* counters, leaderboard moves */
@@ -58,7 +68,7 @@
 
 html {
   background: var(--color-ink);
-  /* the projector is a fixed 16:9 surface; never bounce it */
+  /* the tap target is hammered; never rubber-band the page under it */
   overscroll-behavior: none;
 }
 
@@ -71,25 +81,54 @@ body {
 }
 
 /* Every number that changes is tabular. No exceptions — proportional figures
-   jitter horizontally as an eased counter ticks, and on a projector that reads
-   as broken. */
+   jitter horizontally as an eased counter ticks, and that reads as broken. */
 .tnum {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
 }
 
 /* ---------------------------------------------------------------------------
-   Type scale — PHONE (/spray)
+   Type scale
+   ---------------------------------------------------------------------------
+   One responsive surface, so every size is fluid. The low end of each clamp is
+   sized for a 360px phone, the high end for a desktop the arena is being shown
+   on across a room.
    --------------------------------------------------------------------------- */
 
-.t-personal-total {
+.t-hero {
+  font-family: var(--font-display), sans-serif;
+  font-weight: 900;
+  font-size: clamp(56px, 15vw, 132px);
+  line-height: 0.92;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.t-display {
   font-family: var(--font-display), sans-serif;
   font-weight: 800;
-  font-size: 40px;
+  font-size: clamp(30px, 6vw, 52px);
   line-height: 1.0;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
+}
+
+.t-stat {
+  font-family: var(--font-display), sans-serif;
+  font-weight: 800;
+  font-size: clamp(22px, 3.4vw, 34px);
+  line-height: 1.0;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.t-body {
+  font-family: var(--font-sans), sans-serif;
+  font-size: clamp(15px, 1.6vw, 18px);
+  line-height: 1.55;
 }
 
 .t-chip {
@@ -100,7 +139,7 @@ body {
   text-transform: uppercase;
 }
 
-.t-tap-label {
+.t-label {
   font-family: var(--font-mono), monospace;
   font-weight: 700;
   font-size: 12px;
@@ -108,59 +147,28 @@ body {
   letter-spacing: 0.08em;
 }
 
-.t-party {
+.t-section {
   font-family: var(--font-mono), monospace;
   font-weight: 400;
-  font-size: 10px;
+  font-size: clamp(11px, 1.1vw, 14px);
   text-transform: uppercase;
+  letter-spacing: 0.09em;
   color: var(--color-text-4);
 }
 
 .t-meta {
   font-family: var(--font-mono), monospace;
   font-weight: 400;
-  font-size: 9px;
+  font-size: 10px;
   text-transform: uppercase;
-  color: var(--color-text-4);
-}
-
-/* ---------------------------------------------------------------------------
-   Type scale — PROJECTOR (/stage)
-   Sized for 1920x1080 viewed at 15m.
-   --------------------------------------------------------------------------- */
-
-.t-total {
-  font-family: var(--font-display), sans-serif;
-  font-weight: 900;
-  font-size: 128px;
-  line-height: 0.95;
-  letter-spacing: -0.03em;
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum" 1;
-}
-
-.t-tps {
-  font-family: var(--font-display), sans-serif;
-  font-weight: 800;
-  font-size: 48px;
-  line-height: 1.0;
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum" 1;
-}
-
-.t-section {
-  font-family: var(--font-mono), monospace;
-  font-weight: 400;
-  font-size: 18px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   color: var(--color-text-4);
 }
 
 .t-lb-addr {
   font-family: var(--font-mono), monospace;
   font-weight: 400;
-  font-size: 24px;
+  font-size: clamp(13px, 1.5vw, 17px);
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
 }
@@ -168,8 +176,62 @@ body {
 .t-lb-value {
   font-family: var(--font-mono), monospace;
   font-weight: 700;
-  font-size: 24px;
+  font-size: clamp(13px, 1.5vw, 17px);
   text-align: right;
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
+}
+
+/* ---------------------------------------------------------------------------
+   The tap target
+   ---------------------------------------------------------------------------
+   The one element the whole product is about. Kept here rather than inline
+   because its press response is a token-level decision, not a component one.
+   --------------------------------------------------------------------------- */
+
+.tap-target {
+  transition:
+    transform var(--dur-tap) var(--ease-tap),
+    border-color var(--dur-tap) linear,
+    background-color var(--dur-tap) linear;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+.tap-target:active {
+  transform: scale(0.975);
+}
+
+/* A ring that pulses once per tap. Transform and opacity only, so it never
+   triggers layout while the finger is going as fast as it can. */
+@keyframes tap-ring {
+  from { transform: scale(1);    opacity: 0.55; }
+  to   { transform: scale(1.18); opacity: 0;    }
+}
+
+.tap-ring {
+  animation: tap-ring 420ms var(--ease-out) forwards;
+}
+
+/* The live dot next to a connected feed. */
+@keyframes live-pulse {
+  0%, 100% { opacity: 1;   }
+  50%      { opacity: 0.35; }
+}
+
+.live-dot {
+  animation: live-pulse 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tap-target,
+  .tap-ring,
+  .live-dot {
+    animation: none;
+    transition: none;
+  }
+  .tap-target:active {
+    transform: none;
+  }
 }

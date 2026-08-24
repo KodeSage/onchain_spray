@@ -2,8 +2,13 @@ import { ImageResponse } from "next/og";
 
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
-export const alt = "Onchain Spray — spray money onchain, at Monad speed";
+export const alt = "Tap — a Monad testnet faucet you have to earn";
 
+/**
+ * Rendered at build time by Satori, which supports a deliberately small subset
+ * of CSS: flex only, no gradients worth trusting, no external assets. The
+ * droplets are plain positioned circles for that reason, not an SVG import.
+ */
 export default function OgImage() {
   return new ImageResponse(
     (
@@ -14,76 +19,95 @@ export default function OgImage() {
           display: "flex",
           flexDirection: "column",
           justifyContent: "space-between",
-          background: "#0B0B0C",
+          background: "#08080A",
           padding: 72,
           fontFamily: "sans-serif",
         }}
       >
-        {/* scattered notes */}
+        {/* a scatter of droplets, falling toward the lower right */}
         <div style={{ display: "flex", position: "absolute", top: 0, left: 0 }}>
           {[
-            [820, 90, -18],
-            [960, 250, 12],
-            [740, 330, 24],
-            [1010, 60, 34],
-            [880, 430, -8],
-          ].map(([x, y, r], i) => (
+            [840, 70, 30, "#836EF9"],
+            [960, 180, 20, "#6B55E0"],
+            [1040, 300, 34, "#3FE0D0"],
+            [880, 330, 16, "#4A3E8F"],
+            [1100, 120, 22, "#9C8BFF"],
+            [790, 210, 13, "#4A3E8F"],
+            [1010, 440, 26, "#6B55E0"],
+            [910, 490, 15, "#836EF9"],
+          ].map(([x, y, r, colour], i) => (
             <div
               key={i}
               style={{
                 position: "absolute",
-                left: x,
-                top: y,
-                width: 132,
-                height: 68,
-                background: i % 2 === 0 ? "#14361E" : "#1B4A28",
-                border: "3px solid #1F6438",
-                borderRadius: 6,
-                transform: `rotate(${r}deg)`,
-                display: "flex",
+                left: Number(x),
+                top: Number(y),
+                width: Number(r) * 2.1,
+                height: Number(r),
+                borderRadius: Number(r),
+                background: String(colour),
+                opacity: 0.9,
               }}
             />
           ))}
         </div>
 
-        <div style={{ display: "flex", color: "#16C77F", fontSize: 26, letterSpacing: 2 }}>
-          ONCHAIN SPRAY
+        <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+          <div
+            style={{
+              width: 14,
+              height: 14,
+              borderRadius: 14,
+              background: "#3FE0D0",
+              display: "flex",
+            }}
+          />
+          <div style={{ color: "#6A6878", fontSize: 24, letterSpacing: 2 }}>
+            MONAD TESTNET FAUCET
+          </div>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column" }}>
           <div
             style={{
-              display: "flex",
-              color: "#FAF7F0",
-              fontSize: 104,
+              color: "#F5F3FF",
+              fontSize: 132,
               fontWeight: 900,
+              letterSpacing: -4,
               lineHeight: 1,
-              letterSpacing: -3,
+              display: "flex",
             }}
           >
-            Spray money, onchain.
+            Earn your
           </div>
-          <div style={{ display: "flex", color: "#9C9992", fontSize: 32, marginTop: 24 }}>
-            Hundreds of transactions a second. No popups. No signing.
+          <div
+            style={{
+              color: "#836EF9",
+              fontSize: 132,
+              fontWeight: 900,
+              letterSpacing: -4,
+              lineHeight: 1,
+              display: "flex",
+            }}
+          >
+            testnet MON.
+          </div>
+          <div
+            style={{
+              color: "#A5A2B8",
+              fontSize: 30,
+              marginTop: 26,
+              maxWidth: 720,
+              display: "flex",
+            }}
+          >
+            A live global arena where every tap is a real transaction. No wallet
+            popups, ever.
           </div>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-          <div
-            style={{
-              display: "flex",
-              background: "#E8B33A",
-              color: "#0B0B0C",
-              fontSize: 30,
-              fontWeight: 700,
-              padding: "12px 24px",
-            }}
-          >
-            Monad testnet
-          </div>
-          <div style={{ display: "flex", color: "#6B6862", fontSize: 26 }}>
-            built at Monad Blitz Abuja
-          </div>
+        <div style={{ display: "flex", color: "#6A6878", fontSize: 22 }}>
+          tap · hold · claim
         </div>
       </div>
     ),

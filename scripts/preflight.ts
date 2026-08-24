@@ -1,11 +1,12 @@
 /**
- * Pre-demo checklist, automated.
+ * Faucet readiness check.
  *
- *   npx tsx scripts/preflight.ts
+ *   npm run preflight
  *
- * Everything here is checked by reading real state, not by assuming. The
- * funding check in particular reads the master wallet's balance — the failure
- * mode it exists to catch is "we assumed it was funded" at 5:55pm.
+ * Everything here is checked by reading real state, not by assuming. The house
+ * wallet check reads an actual balance, and the store and captcha checks exist
+ * because a faucet that is missing either of them is not a degraded faucet — it
+ * is an open wallet, and it will be found within hours of going public.
  */
 
 import { readFileSync, existsSync, readdirSync } from "node:fs";
@@ -14,7 +15,11 @@ import { createPublicClient, http, formatEther, type Address } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { monadTestnet } from "../lib/chain";
 import { ENDPOINTS, getEndpoint } from "../lib/rpc";
-import { SPRAY_GAS_LIMIT } from "../lib/constants";
+import {
+  BURNER_TARGET_BALANCE,
+  DRIP_MAX,
+  TAP_GAS_LIMIT,
+} from "../lib/constants";
 
 function loadEnv() {
   for (const file of [".env", ".env.local"]) {
@@ -39,8 +44,8 @@ function warn(label: string, detail = "") {
   results.push({ ok: "warn", label, detail });
 }
 
-const BURNERS_EXPECTED = 130;
-const TAPS_PER_BURNER = 200;
+/** What one engaged player costs the house in a round: gas plus a full drip. */
+const PLAYERS_PER_DAY = 250;
 
 async function main() {
   loadEnv();
@@ -66,9 +71,9 @@ async function main() {
   }
 
   /* ---- contract -------------------------------------------------------- */
-  const contract = process.env.NEXT_PUBLIC_SPRAY_CONTRACT as Address | undefined;
+  const contract = process.env.NEXT_PUBLIC_ARENA_CONTRACT as Address | undefined;
   if (!contract) {
-    fail("contract deployed", "NEXT_PUBLIC_SPRAY_CONTRACT not set — run npm run deploy");
+    fail("contract deployed", "NEXT_PUBLIC_ARENA_CONTRACT not set — run npm run deploy");
   } else {
     try {
       const code = await client.getCode({ address: contract });
@@ -83,33 +88,73 @@ async function main() {
     }
   }
 
-  /* ---- funding wallet — read the balance, never assume ----------------- */
-  const fundKey = process.env.FUNDING_PRIVATE_KEY;
-  if (!fundKey) {
-    fail("funding wallet", "FUNDING_PRIVATE_KEY not set — nobody can spray");
+  /* ---- house wallet — read the balance, never assume -------------------- */
+  const houseKey = process.env.HOUSE_PRIVATE_KEY;
+  if (!houseKey) {
+    fail("house wallet", "HOUSE_PRIVATE_KEY not set — nobody can tap or claim");
   } else {
     try {
-      const master = privateKeyToAccount(fundKey as `0x${string}`);
-      const balance = await client.getBalance({ address: master.address });
-      const perTap = gasPrice > 0n ? gasPrice * SPRAY_GAS_LIMIT : 0n;
-      const perBurner = perTap * BigInt(TAPS_PER_BURNER);
-      const needed = perBurner * BigInt(BURNERS_EXPECTED);
+      const normalised = houseKey.trim().replace(/^["\']|["\']$/g, "");
+      const house = privateKeyToAccount(
+        (normalised.startsWith("0x") ? normalised : `0x${normalised}`) as `0x${string}`
+      );
+      const balance = await client.getBalance({ address: house.address });
+
+      // Cost per engaged player: the gas the house funds into their burner,
+      // plus the largest drip they could claim.
+      const perPlayer = BURNER_TARGET_BALANCE + DRIP_MAX;
+      const needed = perPlayer * BigInt(PLAYERS_PER_DAY);
+      const perTap = gasPrice > 0n ? gasPrice * TAP_GAS_LIMIT : 0n;
 
       const detail =
-        `${formatEther(balance)} MON at ${master.address}\n` +
-        `         need ~${formatEther(needed)} MON for ${BURNERS_EXPECTED} burners ` +
-        `x ${TAPS_PER_BURNER} taps (${formatEther(perTap)} MON/tap gas)`;
+        `${formatEther(balance)} MON at ${house.address}\n` +
+        `         need ~${formatEther(needed)} MON/day for ${PLAYERS_PER_DAY} players ` +
+        `(${formatEther(perPlayer)} MON each)\n` +
+        `         one tap costs ${formatEther(perTap)} MON of gas at ${Number(gasPrice) / 1e9} gwei`;
 
-      if (needed > 0n && balance >= needed) pass("funding wallet", detail);
+      if (needed > 0n && balance >= needed) pass("house wallet", detail);
       else if (balance > 0n)
-        fail(
-          "funding wallet",
-          `${detail}\n         SHORT BY ~${formatEther(needed - balance)} MON`
+        warn(
+          "house wallet",
+          `${detail}\n         covers ~${Number(balance / (perPlayer || 1n))} players today`
         );
-      else fail("funding wallet", `EMPTY — ${master.address}`);
+      else fail("house wallet", `EMPTY — ${house.address}`);
     } catch (e) {
-      fail("funding wallet", e instanceof Error ? e.message : "check failed");
+      fail("house wallet", e instanceof Error ? e.message : "check failed");
     }
+  }
+
+  /* ---- durable store — the difference between a faucet and a free wallet - */
+  if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+    try {
+      const res = await fetch(`${process.env.UPSTASH_REDIS_REST_URL}/ping`, {
+        headers: { Authorization: `Bearer ${process.env.UPSTASH_REDIS_REST_TOKEN}` },
+        signal: AbortSignal.timeout(8_000),
+      });
+      if (res.ok) pass("durable store", "Upstash reachable — rate limits survive a cold start");
+      else fail("durable store", `Upstash returned ${res.status}`);
+    } catch (e) {
+      fail("durable store", e instanceof Error ? e.message : "unreachable");
+    }
+  } else {
+    fail(
+      "durable store",
+      "UPSTASH_REDIS_REST_URL/TOKEN unset — in-process limits reset on every\n" +
+        "         cold start and are per-instance. The faucet fails closed in production."
+    );
+  }
+
+  /* ---- captcha --------------------------------------------------------- */
+  if (process.env.TURNSTILE_SECRET_KEY && process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY) {
+    pass("captcha", "Turnstile configured on the claim route");
+  } else if (process.env.TURNSTILE_SECRET_KEY || process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY) {
+    fail("captcha", "only one half of the Turnstile pair is set — need both keys");
+  } else {
+    fail(
+      "captcha",
+      "TURNSTILE_SECRET_KEY unset — no proof-of-humanity on claim.\n" +
+        "         The faucet fails closed in production."
+    );
   }
 
   /* ---- endpoint spread ------------------------------------------------- */
@@ -180,21 +225,21 @@ async function main() {
     warn("no secrets committed", "could not inspect git");
   }
 
-  /* ---- QR target ------------------------------------------------------- */
+  /* ---- public origin --------------------------------------------------- */
   const appUrl = process.env.NEXT_PUBLIC_APP_URL;
   if (!appUrl) {
-    warn("QR target", "NEXT_PUBLIC_APP_URL unset — QR falls back to window.origin");
+    warn("public origin", "NEXT_PUBLIC_APP_URL unset — og:image falls back to localhost");
   } else if (/localhost|127\.0\.0\.1/.test(appUrl)) {
-    warn("QR target", `${appUrl} — nobody in the room can scan localhost`);
+    warn("public origin", `${appUrl} — link previews will point at localhost`);
   } else {
-    pass("QR target", `${appUrl}/spray/0`);
+    pass("public origin", appUrl);
   }
 
-  /* ---- demo fallback --------------------------------------------------- */
-  if (existsSync("lib/stage-feed.ts")) {
-    const src = readFileSync("lib/stage-feed.ts", "utf8");
-    if (src.includes("startDemoFeed")) pass("demo fallback", "/stage/0?demo=1 available offline");
-    else fail("demo fallback", "demo feed missing");
+  /* ---- spectate fallback ----------------------------------------------- */
+  if (existsSync("lib/arena-feed.ts")) {
+    const src = readFileSync("lib/arena-feed.ts", "utf8");
+    if (src.includes("startDemoFeed")) pass("spectate fallback", "/?demo=1 available offline");
+    else fail("spectate fallback", "synthetic feed missing");
   }
 
   /* ---- report ---------------------------------------------------------- */

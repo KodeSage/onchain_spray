@@ -1,5 +1,5 @@
 {
-  "name": "onchain_spray",
+  "name": "tap",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -10,17 +10,16 @@
     "gen:abi": "node scripts/gen-abi.mjs",
     "contracts:build": "cd contracts && forge build",
     "contracts:test": "cd contracts && forge test",
-    "contracts:gas": "cd contracts && forge test --gas-report && forge test --match-contract SprayGasTest -vv",
+    "contracts:gas": "cd contracts && forge test --match-contract TapGasTest -vv",
     "deploy": "bash scripts/deploy.sh",
-    "create-party": "tsx scripts/create-party.ts",
+    "preflight": "tsx scripts/preflight.ts",
     "rate-check": "tsx scripts/rate-check.ts",
     "load-test": "tsx scripts/load-test.ts",
-    "preflight": "tsx scripts/preflight.ts",
     "bench": "tsx scripts/bench-tap.ts"
   },
   "dependencies": {
+    "@upstash/redis": "^1.38.2",
     "next": "15.5.23",
-    "qrcode": "^1.5.4",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "viem": "^2.55.19"
@@ -29,7 +28,6 @@
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
-    "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
@@ -37,5 +35,6 @@
     "tailwindcss": "^4",
     "tsx": "^4.23.12",
     "typescript": "^5"
-  }
+  },
+  "description": "A gamified Monad testnet faucet. Earn your MON in a live global arena."
 }

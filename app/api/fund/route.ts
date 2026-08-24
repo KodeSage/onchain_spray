@@ -1,210 +1,176 @@
 import { NextResponse } from "next/server";
-import { createWalletClient, http, parseEther, formatEther, isAddress, type Address } from "viem";
-import { privateKeyToAccount } from "viem/accounts";
-import { monadTestnet, httpClientFor, HTTP_TIMEOUT_MS } from "@/lib/chain";
-import { ENDPOINTS } from "@/lib/rpc";
-import { loadPrivateKey, keyErrorResponse } from "@/lib/server-key";
-import { envOr } from "@/lib/env";
+import { formatEther } from "viem";
+import { TRANSFER_GAS_LIMIT } from "@/lib/constants";
+import { currentRound } from "@/lib/format";
+import { houseAccount, houseBalance, houseReadClient, houseSend } from "@/lib/house";
+import { keyErrorResponse } from "@/lib/server-key";
+import { clientIp, keys, requireStore, toGwei } from "@/lib/store";
+import {
+  budgetState,
+  caps,
+  normalizeAddress,
+  reserve,
+  topUpAmount,
+} from "@/lib/faucet";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Drips testnet MON to a burner.
+ * Seeds a burner with gas.
  *
- * The master key never reaches the client. faucet.monad.xyz drips small amounts
- * per day, so this wallet cannot be topped up on the morning of the event — it
- * has to be funded in advance. See README, "Funding maths".
+ * This is the half of the faucet the player never sees. It funds the in-browser
+ * key so tapping costs them nothing, and it is metered per address, per IP and
+ * against the day's global budget — gas given away is money given away, and the
+ * fact that it is spent on gas rather than handed over does not make it free.
  *
- * Funding is lazy and incremental rather than one big grant per person: of 130
- * people who scan the QR, only some tap hard, and a fixed up-front grant to all
- * of them wastes most of the budget on phones sitting in pockets. Clients ask
- * again when they run low, so MON follows actual tapping.
+ * The master key never reaches the client.
+ *
+ * TIMING. A newly funded account cannot transact until its funding transfer is
+ * 3 blocks old, because Monad's consensus validates gas budgets against a
+ * delayed state view. The response carries armAfterMs so the client knows to
+ * hold before the first tap. The UI hides that wait behind onboarding by
+ * calling this on page load rather than when the player presses start.
  */
 
-/* Parsed on first request rather than at import. These are real money knobs, so
-   a malformed value must fail loudly — but a throw at module scope fails the
-   production build instead of the request that set it wrong. */
-type Amounts = { fund: bigint; cap: bigint };
-let amounts: Amounts | null = null;
-function fundingAmounts(): Amounts | null {
-  if (!amounts) {
-    try {
-      amounts = {
-        fund: parseEther(envOr("FUND_AMOUNT_MON", "0.35")),
-        cap: parseEther(envOr("FUND_TOTAL_CAP_MON", "120")),
-      };
-    } catch {
-      return null;
-    }
-  }
-  return amounts;
-}
-
-const badConfig = () =>
-  NextResponse.json({ ok: false, error: "bad_funding_config" }, { status: 500 });
-
-/** A burner may be topped up this many times before we stop. */
-const MAX_GRANTS_PER_ADDRESS = 6;
-/** One IP is usually one phone; a few extra allows for shared NAT at a venue. */
-const MAX_GRANTS_PER_IP = 25;
-const MIN_INTERVAL_MS = 4_000;
-
-type Grant = { count: number; last: number };
-
-const byAddress = new Map<string, Grant>();
-const byIp = new Map<string, Grant>();
-let dispensed = 0n;
-
-/** The master wallet has the same nonce-race problem as a burner: 130 phones
- *  asking for funds at once will collide. Same fix — one local counter, one
- *  promise chain, incremented before any await. */
-let masterNonce = -1;
-let masterChain: Promise<unknown> = Promise.resolve();
-
-function clientIp(req: Request): string {
-  const fwd = req.headers.get("x-forwarded-for");
-  if (fwd) return fwd.split(",")[0].trim();
-  return req.headers.get("x-real-ip") ?? "unknown";
-}
-
-function allow(map: Map<string, Grant>, key: string, max: number): boolean {
-  const now = Date.now();
-  const entry = map.get(key);
-  if (!entry) {
-    map.set(key, { count: 1, last: now });
-    return true;
-  }
-  if (entry.count >= max) return false;
-  if (now - entry.last < MIN_INTERVAL_MS) return false;
-  entry.count += 1;
-  entry.last = now;
-  return true;
-}
+/** 3 blocks at ~400ms, plus a margin for inclusion. */
+const ARM_AFTER_MS = 1_600;
 
 export async function POST(req: Request) {
-  const loaded = loadPrivateKey();
-  if (!loaded.ok) {
-    const { body, status } = keyErrorResponse(loaded.reason);
+  const house = houseAccount();
+  if (!house.ok) {
+    const { body, status } = keyErrorResponse(house.reason);
     return NextResponse.json(body, { status });
   }
 
-  let address: string;
+  const storeResult = requireStore();
+  if (!storeResult.ok) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: storeResult.error,
+        message: "The faucet is not configured for public use. Set UPSTASH_REDIS_REST_URL.",
+      },
+      { status: 503 }
+    );
+  }
+  const store = storeResult.store;
+
+  let address: string | undefined;
   try {
     const body = (await req.json()) as { address?: string };
-    address = body.address ?? "";
+    address = body.address;
   } catch {
     return NextResponse.json({ ok: false, error: "bad_request" }, { status: 400 });
   }
 
-  if (!isAddress(address)) {
+  const to = normalizeAddress(address);
+  if (!to) {
     return NextResponse.json({ ok: false, error: "bad_address" }, { status: 400 });
   }
 
-  const to = address as Address;
   const ip = clientIp(req);
-  const configured = fundingAmounts();
-  if (!configured) return badConfig();
-  const { fund: FUND_AMOUNT, cap: TOTAL_CAP } = configured;
+  const round = currentRound();
 
-  if (dispensed + FUND_AMOUNT > TOTAL_CAP) {
-    return NextResponse.json({ ok: false, error: "budget_exhausted" }, { status: 429 });
-  }
-  if (!allow(byAddress, to.toLowerCase(), MAX_GRANTS_PER_ADDRESS)) {
-    return NextResponse.json({ ok: false, error: "address_limit" }, { status: 429 });
-  }
-  if (!allow(byIp, ip, MAX_GRANTS_PER_IP)) {
-    return NextResponse.json({ ok: false, error: "ip_limit" }, { status: 429 });
-  }
-
-  const account = privateKeyToAccount(loaded.key);
-  const rpc = ENDPOINTS[0].http;
-  const wallet = createWalletClient({
-    account,
-    chain: monadTestnet,
-    transport: http(rpc, { timeout: HTTP_TIMEOUT_MS }),
-  });
-  const publicClient = httpClientFor(rpc);
-
-  // don't fund a burner that is already comfortable
+  // Don't fund a burner that is already comfortable. This is the common case
+  // on a reload, and it must not consume any of the day's budget.
+  let balance = 0n;
   try {
-    const existing = await publicClient.getBalance({ address: to });
-    if (existing >= FUND_AMOUNT) {
-      return NextResponse.json({
-        ok: true,
-        skipped: "already_funded",
-        balance: existing.toString(),
-      });
-    }
+    balance = await houseReadClient().getBalance({ address: to });
   } catch {
-    /* if we cannot read the balance, fund anyway — better than a dead phone */
+    /* if we cannot read the balance, fund anyway — better than a dead burner */
   }
 
-  const task = masterChain.then(async () => {
-    if (masterNonce < 0) {
-      masterNonce = await publicClient.getTransactionCount({
-        address: account.address,
-        blockTag: "pending",
-      });
-    }
-    const assigned = masterNonce;
-    masterNonce += 1;
+  const amount = topUpAmount(balance);
+  if (amount === 0n) {
+    return NextResponse.json({
+      ok: true,
+      skipped: "already_funded",
+      balance: balance.toString(),
+      armAfterMs: 0,
+    });
+  }
 
+  const amountGwei = toGwei(amount);
+  const reservation = await reserve(
+    store,
+    [
+      {
+        key: keys.gasByAddress(round, to),
+        cap: caps.gasPerAddress,
+        error: "gas_budget_spent",
+        message:
+          "This burner has had its gas allowance for today. Taps now settle in " +
+          "batches, which is cheaper and plays the same. Resets at 00:00 UTC.",
+      },
+      {
+        key: keys.gasByIp(round, ip),
+        cap: caps.gasPerIp,
+        error: "ip_limit",
+        message: "This network has funded enough burners today. Resets at 00:00 UTC.",
+      },
+      {
+        key: keys.dailyBudget(round),
+        cap: caps.daily,
+        error: "budget_exhausted",
+        message: "The faucet has spent today's budget. It refills at 00:00 UTC.",
+      },
+    ],
+    amountGwei
+  );
+
+  if (!reservation.ok) {
+    return NextResponse.json(
+      { ok: false, error: reservation.error, message: reservation.message },
+      { status: reservation.status }
+    );
+  }
+
+  try {
     // A native MON transfer is always exactly 21,000 gas. Hardcoded, because on
     // Monad the sender pays for the limit and estimateGas is both a wasted round
     // trip and rate-limited harder than everything else.
-    return wallet.sendTransaction({
-      to,
-      value: FUND_AMOUNT,
-      gas: 21_000n,
-      nonce: assigned,
-    });
-  });
-
-  masterChain = task.catch(() => undefined);
-
-  try {
-    const hash = await task;
-    dispensed += FUND_AMOUNT;
+    const hash = await houseSend({ to, value: amount, gas: TRANSFER_GAS_LIMIT });
     return NextResponse.json({
       ok: true,
       hash,
-      amount: formatEther(FUND_AMOUNT),
-      remaining: formatEther(TOTAL_CAP - dispensed),
+      amount: formatEther(amount),
+      armAfterMs: ARM_AFTER_MS,
     });
   } catch (err) {
-    // a failed send means our nonce counter is now ahead of chain; resync
-    masterNonce = -1;
+    // The money never left, so the reservation must not stand.
+    await reservation.release();
     const message = err instanceof Error ? err.message : "send_failed";
     console.error("[fund] send failed:", message);
-    return NextResponse.json({ ok: false, error: "send_failed" }, { status: 502 });
+    return NextResponse.json(
+      { ok: false, error: "send_failed", message: "Could not reach the network. Try again." },
+      { status: 502 }
+    );
   }
 }
 
-/** Lets the pre-flight checklist read the master wallet balance for real,
- *  rather than assuming it is funded. */
+/** Lets the preflight check read the house wallet and today's budget for real. */
 export async function GET() {
-  const loaded = loadPrivateKey();
-  if (!loaded.ok) {
-    const { body, status } = keyErrorResponse(loaded.reason);
+  const house = houseAccount();
+  if (!house.ok) {
+    const { body, status } = keyErrorResponse(house.reason);
     return NextResponse.json(body, { status });
   }
-  const account = privateKeyToAccount(loaded.key);
-  const publicClient = httpClientFor(ENDPOINTS[0].http);
-  const configured = fundingAmounts();
-  if (!configured) return badConfig();
-  const { fund: FUND_AMOUNT, cap: TOTAL_CAP } = configured;
+
+  const store = requireStore();
+  const budget = await budgetState(store.ok ? store.store : undefined);
+
   try {
-    const balance = await publicClient.getBalance({ address: account.address });
-    const perBurner = FUND_AMOUNT;
+    const balance = await houseBalance();
     return NextResponse.json({
       ok: true,
-      master: account.address,
+      house: house.address,
       balance: formatEther(balance),
-      fundAmount: formatEther(perBurner),
-      burnersCovered: Number(balance / perBurner),
-      dispensedThisProcess: formatEther(dispensed),
-      capRemaining: formatEther(TOTAL_CAP - dispensed),
+      durableStore: store.ok && store.store.durable,
+      round: budget.round,
+      budgetUsedGwei: budget.usedGwei,
+      budgetCapGwei: budget.capGwei,
+      budgetRemainingShare: Number(budget.remainingShare.toFixed(4)),
     });
   } catch {
     return NextResponse.json({ ok: false, error: "rpc_unavailable" }, { status: 502 });
