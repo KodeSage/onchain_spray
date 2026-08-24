@@ -2,11 +2,11 @@
 pragma solidity ^0.8.24;
 
 import {Script, console} from "forge-std/Script.sol";
-import {SprayParty} from "../src/SprayParty.sol";
+import {TapArena} from "../src/TapArena.sol";
 
 /// forge script script/Deploy.s.sol:Deploy --rpc-url $MONAD_RPC_URL --broadcast
 contract Deploy is Script {
-    function run() external returns (SprayParty deployed) {
+    function run() external returns (TapArena deployed) {
         uint256 pk = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(pk);
 
@@ -14,33 +14,28 @@ contract Deploy is Script {
         console.log("balance  :", deployer.balance);
         require(deployer.balance > 0, "deployer has no MON - fund it at faucet.monad.xyz");
 
-        // The party name is whoever is actually being sprayed tonight, so it
-        // comes from the environment rather than being compiled in.
-        string memory name = vm.envOr("PARTY_NAME", string("Monad Blitz Abuja"));
-        require(bytes(name).length <= 31, "PARTY_NAME must fit in bytes32");
+        // The operator is the house server's hot wallet — the only address that
+        // can settle a claim. It is separate from the owner on purpose: the key
+        // that sits in a serverless environment variable should not also be the
+        // key that can hand ownership away. Defaults to the deployer so a local
+        // deploy works with no extra setup.
+        address operator = vm.envOr("OPERATOR_ADDRESS", deployer);
 
         vm.startBroadcast(pk);
-        deployed = new SprayParty();
-
-        // Open the first party in the same broadcast, so the stage has
-        // something to point at the moment the deploy finishes. RECIPIENT is
-        // whoever is being sprayed tonight — the deployer only by default. In
-        // the real flow the dancer submits their own address through the UI and
-        // /api/create-party opens a party for them.
-        address recipient = vm.envOr("PARTY_RECIPIENT", deployer);
-        uint256 partyId = deployed.createParty(bytes32(bytes(name)), recipient);
+        deployed = new TapArena(operator);
         vm.stopBroadcast();
 
-        console.log("party    :", name);
-        console.log("host     :", deployer);
-        console.log("recipient:", recipient);
-
-        console.log("SprayParty:", address(deployed));
-        console.log("partyId   :", partyId);
+        console.log("TapArena :", address(deployed));
+        console.log("owner    :", deployer);
+        console.log("operator :", operator);
+        console.log("round    :", deployed.currentRound());
         console.log("");
         console.log("Add to .env.local:");
-        console.log(
-            string.concat("NEXT_PUBLIC_SPRAY_CONTRACT=", vm.toString(address(deployed)))
-        );
+        console.log(string.concat("NEXT_PUBLIC_ARENA_CONTRACT=", vm.toString(address(deployed))));
+
+        if (operator == deployer) {
+            console.log("");
+            console.log("NOTE: operator == owner. Set OPERATOR_ADDRESS to split them in production.");
+        }
     }
 }

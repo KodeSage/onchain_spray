@@ -156,7 +156,7 @@ export function createSender({ seed, fetchImpl, relayUrl }: SenderOptions): Send
         return;
       } catch {
         // relay unreachable — fall back to talking to the RPC directly, which
-        // is slower on the limits but keeps the room spraying
+        // is slower on the limits but keeps the arena tapping
         relayDownUntil = Date.now() + 5_000;
         requeue(viaRelay);
         return;

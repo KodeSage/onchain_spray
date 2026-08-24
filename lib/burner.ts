@@ -1,31 +1,26 @@
 "use client";
 
-import {
-  createWalletClient,
-  encodeFunctionData,
-  http,
-  keccak256,
-  type Address,
-  type Hash,
-  type Hex,
-} from "viem";
+import { encodeFunctionData, keccak256, type Address, type Hash, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import type { PrivateKeyAccount } from "viem/accounts";
-import { monadTestnet, httpClientFor, HTTP_TIMEOUT_MS } from "./chain";
+import { monadTestnet, httpClientFor } from "./chain";
 import { getEndpoint } from "./rpc";
-import { assertContractConfigured, sprayPartyAbi } from "./contract";
+import { assertContractConfigured, tapArenaAbi } from "./contract";
 import { createSender, type Sender, type SendStats } from "./sender";
 import {
   BURNER_STORAGE_KEY,
   FEE_REFRESH_INTERVAL_MS,
   MAX_FEE_PER_GAS,
   MAX_PRIORITY_FEE_PER_GAS,
-  SPRAY_GAS_LIMIT,
-  SPRAY_GAS_LIMIT_FIRST,
+  MAX_TAPS_PER_BATCH,
+  TAP_BATCH_GAS_LIMIT,
+  TAP_BATCH_GAS_LIMIT_FIRST,
+  TAP_GAS_LIMIT,
+  TAP_GAS_LIMIT_FIRST,
 } from "./constants";
 
 /**
- * The burner engine. This is why a spray feels instant.
+ * The burner engine. This is why a tap feels instant.
  *
  * The tap path does zero network round trips:
  *   1. take a nonce from a local counter (synchronous)
@@ -52,8 +47,11 @@ let fees = {
 };
 let feeTimer: ReturnType<typeof setInterval> | null = null;
 
-/** Parties this burner has already sprayed, so we know which gas tier to use. */
-const sprayedParties = new Set<number>();
+/**
+ * Whether this burner's Player slot is already non-zero on chain, which decides
+ * the gas tier. Read once at init, then maintained locally.
+ */
+let hasTapped = false;
 
 let resyncCount = 0;
 
@@ -79,11 +77,11 @@ export function getAddress(): Address | null {
 }
 
 /* -------------------------------------------------------------------------
-   3. Nonce management
+   2. Nonce management
    -------------------------------------------------------------------------
    Fetching the nonce per transaction is fatal: at ten taps a second the
    requests race, and you get nonce collisions and "replacement transaction
-   underpriced" errors in the middle of the demo.
+   underpriced" errors in the middle of a run.
 
    Instead the nonce is fetched exactly once with blockTag 'pending', held in a
    module-level counter, and incremented synchronously BEFORE any async work
@@ -93,8 +91,7 @@ export function getAddress(): Address | null {
 
 async function syncNonce(): Promise<void> {
   if (!account) return;
-  const endpoint = getEndpoint(account.address);
-  const client = httpClientFor(endpoint.http);
+  const client = httpClientFor(getEndpoint(account.address).http);
   nonce = await client.getTransactionCount({
     address: account.address,
     blockTag: "pending",
@@ -113,7 +110,7 @@ async function resyncNonce(): Promise<void> {
 }
 
 /* -------------------------------------------------------------------------
-   4. Fees — refreshed in the background, never in the tap path
+   3. Fees — refreshed in the background, never in the tap path
    ------------------------------------------------------------------------- */
 
 async function refreshFees(): Promise<void> {
@@ -124,7 +121,7 @@ async function refreshFees(): Promise<void> {
     // maxFeePerGas is only a cap on Monad — price_per_gas is
     // min(base + priority, max) — so headroom here is free. Unlike the gas
     // limit, which is charged in full.
-    const withHeadroom = (base * 2n) as bigint;
+    const withHeadroom = base * 2n;
     fees = {
       maxFeePerGas: withHeadroom > MAX_FEE_PER_GAS ? withHeadroom : MAX_FEE_PER_GAS,
       maxPriorityFeePerGas: MAX_PRIORITY_FEE_PER_GAS,
@@ -135,12 +132,16 @@ async function refreshFees(): Promise<void> {
 }
 
 /* -------------------------------------------------------------------------
-   Init
+   4. Init
    ------------------------------------------------------------------------- */
 
 export type BurnerState = {
   address: Address;
   balance: bigint;
+  /** Lifetime taps already recorded on chain for this burner. */
+  totalTaps: number;
+  /** Taps recorded for the current round. */
+  roundTaps: number;
 };
 
 export async function initBurner(): Promise<BurnerState> {
@@ -160,13 +161,41 @@ export async function initBurner(): Promise<BurnerState> {
 
   const client = httpClientFor(getEndpoint(account.address).http);
   let balance = 0n;
+  let totalTaps = 0;
+  let roundTaps = 0;
+
   try {
     balance = await client.getBalance({ address: account.address });
   } catch {
     /* non-fatal — the UI shows a funding state and retries */
   }
 
-  return { address: account.address, balance };
+  // One read, at init, outside the tap path: is this burner's Player slot
+  // already non-zero? That decides the gas tier for its very next tap, and
+  // guessing wrong either wastes 30% of the balance or runs out of gas.
+  try {
+    const arena = assertContractConfigured();
+    const [round, storedRoundTaps, storedTotal] = await client.readContract({
+      address: arena,
+      abi: tapArenaAbi,
+      functionName: "players",
+      args: [account.address],
+    });
+    const currentRound = await client.readContract({
+      address: arena,
+      abi: tapArenaAbi,
+      functionName: "currentRound",
+    });
+    totalTaps = Number(storedTotal);
+    roundTaps = round === currentRound ? Number(storedRoundTaps) : 0;
+    hasTapped = totalTaps > 0;
+  } catch {
+    // Unconfigured contract or a dead RPC. Assume untapped: the expensive gas
+    // tier wastes a little, the cheap tier would run out of gas and lose a tap.
+    hasTapped = false;
+  }
+
+  return { address: account.address, balance, totalTaps, roundTaps };
 }
 
 export async function getBalance(): Promise<bigint> {
@@ -184,13 +213,39 @@ export async function getBalance(): Promise<bigint> {
    ------------------------------------------------------------------------- */
 
 /**
- * Sign a spray locally and hand it to the batch sender.
+ * Sign a tap locally and hand it to the batch sender.
  *
  * Returns the transaction hash immediately, computed from the signed payload —
  * no confirmation is awaited and no popup is ever shown. If this function ever
  * blocks on the network, the project has failed.
  */
-export async function spray(partyId: number, amount: bigint): Promise<Hash> {
+export async function tap(): Promise<Hash> {
+  return send(
+    encodeFunctionData({ abi: tapArenaAbi, functionName: "tap" }),
+    hasTapped ? TAP_GAS_LIMIT : TAP_GAS_LIMIT_FIRST
+  );
+}
+
+/**
+ * Credit several taps in one transaction.
+ *
+ * The cheap path, used when the day's gas budget is tight. tapBatch costs the
+ * same as a single tap regardless of count, so this is a 1/n reduction in what
+ * the house pays per tap with no change to the player's score.
+ */
+export async function tapBatch(count: number): Promise<Hash> {
+  const clamped = Math.max(1, Math.min(MAX_TAPS_PER_BATCH, Math.floor(count)));
+  return send(
+    encodeFunctionData({
+      abi: tapArenaAbi,
+      functionName: "tapBatch",
+      args: [clamped],
+    }),
+    hasTapped ? TAP_BATCH_GAS_LIMIT : TAP_BATCH_GAS_LIMIT_FIRST
+  );
+}
+
+async function send(data: Hex, gas: bigint): Promise<Hash> {
   if (!account || !sender) throw new Error("burner not initialised");
   const to = assertContractConfigured();
   const acct = account;
@@ -198,21 +253,8 @@ export async function spray(partyId: number, amount: bigint): Promise<Hash> {
 
   if (!nonceReady) await syncNonce();
 
-  // An address's first spray on a party writes sprayedBy from zero, which is an
-  // SSTORE_SET. Every spray after it is a cheaper update. Monad charges on the
-  // limit, so using the expensive tier for all 300 taps would waste ~25% of the
-  // burner's balance.
-  const first = !sprayedParties.has(partyId);
-  const gas = first ? SPRAY_GAS_LIMIT_FIRST : SPRAY_GAS_LIMIT;
-
-  const data = encodeFunctionData({
-    abi: sprayPartyAbi,
-    functionName: "spray",
-    args: [BigInt(partyId)],
-  });
-
   // Serialize through the chain so nonce assignment is atomic with respect to
-  // other in-flight sprays.
+  // other in-flight taps.
   const task = chain.then(async () => {
     const assigned = nonce;
     nonce += 1; // synchronous increment, before any await
@@ -222,7 +264,7 @@ export async function spray(partyId: number, amount: bigint): Promise<Hash> {
         chainId: monadTestnet.id,
         type: "eip1559",
         to,
-        value: amount,
+        value: 0n,
         data,
         nonce: assigned,
         gas,
@@ -231,7 +273,7 @@ export async function spray(partyId: number, amount: bigint): Promise<Hash> {
       });
 
       snd.enqueue(raw);
-      sprayedParties.add(partyId);
+      hasTapped = true;
 
       // the hash of a signed transaction is just the hash of its payload, so we
       // can hand it back without ever asking the network
@@ -254,7 +296,7 @@ function isNonceError(err: unknown): boolean {
 }
 
 /* -------------------------------------------------------------------------
-   Diagnostics — used by /api/health and the load test, never shown on stage
+   Diagnostics — used by the load test and preflight, never shown in the arena
    ------------------------------------------------------------------------- */
 
 export function senderStats(): SendStats | null {
@@ -262,20 +304,10 @@ export function senderStats(): SendStats | null {
 }
 
 export function nonceDiagnostics() {
-  return { nonce, nonceReady, resyncCount };
+  return { nonce, nonceReady, resyncCount, hasTapped };
 }
 
-/** Exported for the resilience pass: force a flush on page hide. */
+/** Force a flush on page hide, so a tab close does not drop queued taps. */
 export async function flushPending(): Promise<void> {
   await sender?.flushNow();
-}
-
-/** Host-only helper. Never used on the sprayer path. */
-export function walletClient() {
-  if (!account) throw new Error("burner not initialised");
-  return createWalletClient({
-    account,
-    chain: monadTestnet,
-    transport: http(getEndpoint(account.address).http, { timeout: HTTP_TIMEOUT_MS }),
-  });
 }

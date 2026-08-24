@@ -3,8 +3,8 @@ import { Archivo, Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
 /* Archivo carries a genuine width axis and proper tabular figures — that is why
-   it is the display face. Every counter on the projector depends on those
-   figures being tabular. */
+   it is the display face. Every counter in the arena depends on those figures
+   being tabular. */
 const archivo = Archivo({
   subsets: ["latin"],
   display: "swap",
@@ -51,20 +51,20 @@ const appUrl = resolveAppUrl();
 
 export const metadata: Metadata = {
   metadataBase: appUrl,
-  title: "Onchain Spray",
+  title: "Tap — Monad testnet faucet",
   description:
-    "Spray money onchain. Nigerian owambe culture at Monad speed — thousands of micro-transactions a minute.",
+    "A testnet faucet you have to earn. Tap in a live global arena where every " +
+    "tap is a real transaction, then claim your MON. No wallet popups, ever.",
   openGraph: {
-    title: "Onchain Spray",
+    title: "Tap — Monad testnet faucet",
     description:
-      "Spray money onchain. Nigerian owambe culture at Monad speed.",
-    images: ["/og.png"],
+      "A testnet faucet you have to earn. Every tap is a real transaction on Monad.",
   },
   icons: { icon: "/icon.svg" },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0B0B0C",
+  themeColor: "#08080A",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,

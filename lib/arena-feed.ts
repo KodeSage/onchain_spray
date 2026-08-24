@@ -3,39 +3,47 @@
 import { parseAbiItem, type Address, type Hex } from "viem";
 import { createStageWsClient, httpClientFor, monadTestnet } from "./chain";
 import { ENDPOINTS } from "./rpc";
-import { SPRAY_CONTRACT } from "./contract";
+import { ARENA_CONTRACT } from "./contract";
 
 /**
- * The stage's read layer.
+ * The arena's read layer.
  *
  * One websocket subscription, no polling, and no contract calls — the entire
- * read cost of the projector is one connection. Every number on screen is
- * reconstructed from Sprayed events alone, which is why the event carries
- * newTotal and count in its payload.
+ * read cost of the live wall is one connection. Every number on screen is
+ * reconstructed from Tapped events alone, which is why the event carries
+ * roundTaps and totalTaps in its payload.
  *
- * Resilience: the socket drops on bad venue wifi. On reconnect we backfill with
- * getLogs from the last block we actually saw, so the total never goes
- * backwards and no spray is silently lost.
+ * roundTaps is ABSOLUTE, not a delta, and that is what makes the reconstruction
+ * exact. The client keeps a map of player -> latest roundTaps; the global total
+ * is the sum of that map. A duplicate event, an out-of-order event or a
+ * re-delivered backfill all converge to the same number, because the last write
+ * for a player wins rather than accumulating.
+ *
+ * Resilience: the socket drops on bad wifi. On reconnect we backfill with
+ * getLogs from the last block we actually saw, so no tap is silently lost.
  */
 
-export const sprayedEventAbi = parseAbiItem(
-  "event Sprayed(uint256 indexed partyId, address indexed sprayer, uint256 amount, uint256 newTotal, uint64 count)"
+export const tappedEventAbi = parseAbiItem(
+  "event Tapped(address indexed player, uint32 indexed round, uint32 taps, uint32 roundTaps, uint64 totalTaps)"
 );
 
-export type SprayEvent = {
-  sprayer: Address;
-  amount: bigint;
-  newTotal: bigint;
-  count: bigint;
+export type TapEvent = {
+  player: Address;
+  /** How many taps this single transaction represents (1, or n for tapBatch). */
+  taps: number;
+  /** The player's round total AFTER this transaction. Absolute, not a delta. */
+  roundTaps: number;
+  /** The player's lifetime total after this transaction. */
+  totalTaps: bigint;
   blockNumber: bigint;
   txHash: Hex;
-  /** local arrival time, used for the tx/sec window */
+  /** local arrival time, used for the taps/sec window */
   at: number;
   /**
-   * Replayed from the log on a cold load rather than arriving live. The stage
-   * must fold these into the leaderboard but must NOT spawn particles for them
-   * or count them toward tx/sec — a reload would otherwise dump thousands of
-   * notes on screen at once and spike the rate to a number nobody earned.
+   * Replayed from the log on a cold load rather than arriving live. The arena
+   * must fold these into the leaderboard but must NOT spawn droplets for them
+   * or count them toward taps/sec — a reload would otherwise dump thousands of
+   * particles on screen at once and spike the rate to a number nobody earned.
    */
   historical: boolean;
 };
@@ -49,7 +57,7 @@ export type FeedStatus =
   | "error";
 
 export type FeedHandlers = {
-  onSpray: (e: SprayEvent) => void;
+  onTap: (e: TapEvent) => void;
   onStatus: (s: FeedStatus, detail?: string) => void;
 };
 
@@ -60,17 +68,24 @@ const MAX_BACKOFF_MS = 8_000;
 
 /** getLogs window per request. Kept small so no single call is rejected. */
 const HISTORY_CHUNK = 2_000n;
-/** How far back to rebuild the leaderboard from on a cold load. At ~400ms
- *  blocks this is a little over two hours — longer than any demo, short enough
- *  to finish while the projector is warming up. */
+
+/**
+ * How far back to rebuild the leaderboard from on a cold load.
+ *
+ * A UTC round is ~216,000 blocks at 400ms, which is far more than any RPC will
+ * hand over in a reasonable number of requests. So the leaderboard is a rolling
+ * recent window rather than the whole day, and the UI says so. The player's own
+ * round total is never approximated this way — that comes from players() on the
+ * contract and is exact.
+ */
 const HISTORY_LOOKBACK = 20_000n;
 
 export function startFeed(
-  partyId: number,
+  round: number,
   handlers: FeedHandlers,
   opts: { demo?: boolean; history?: boolean } = {}
 ): Feed {
-  if (opts.demo) return startDemoFeed(handlers, partyId);
+  if (opts.demo) return startDemoFeed(handlers);
 
   let stopped = false;
   let unwatch: (() => void) | null = null;
@@ -80,19 +95,25 @@ export function startFeed(
   const seen = new Set<string>();
 
   const http = httpClientFor(ENDPOINTS[0].http);
+  const filter = { round } as const;
 
   function emit(
     historical: boolean,
     logs: readonly {
-      args: { sprayer?: Address; amount?: bigint; newTotal?: bigint; count?: bigint };
+      args: {
+        player?: Address;
+        taps?: number;
+        roundTaps?: number;
+        totalTaps?: bigint;
+      };
       blockNumber: bigint | null;
       transactionHash: Hex | null;
       logIndex: number | null;
     }[]
   ) {
     for (const log of logs) {
-      const { sprayer, amount, newTotal, count } = log.args;
-      if (!sprayer || amount === undefined || newTotal === undefined) continue;
+      const { player, taps, roundTaps, totalTaps } = log.args;
+      if (!player || taps === undefined || roundTaps === undefined) continue;
 
       // dedupe across ws + backfill overlap
       const key = `${log.transactionHash}:${log.logIndex}`;
@@ -108,11 +129,11 @@ export function startFeed(
           lastBlock === null || log.blockNumber > lastBlock ? log.blockNumber : lastBlock;
       }
 
-      handlers.onSpray({
-        sprayer,
-        amount,
-        newTotal,
-        count: count ?? 0n,
+      handlers.onTap({
+        player,
+        taps,
+        roundTaps,
+        totalTaps: totalTaps ?? 0n,
         blockNumber: log.blockNumber ?? 0n,
         txHash: log.transactionHash ?? ("0x" as Hex),
         at: Date.now(),
@@ -128,9 +149,9 @@ export function startFeed(
       const current = await http.getBlockNumber();
       if (current <= lastBlock) return;
       const logs = await http.getLogs({
-        address: SPRAY_CONTRACT,
-        event: sprayedEventAbi,
-        args: { partyId: BigInt(partyId) },
+        address: ARENA_CONTRACT,
+        event: tappedEventAbi,
+        args: filter,
         fromBlock: lastBlock + 1n,
         toBlock: current,
       });
@@ -153,9 +174,9 @@ export function startFeed(
       if (lastBlock === null) lastBlock = await http.getBlockNumber();
 
       unwatch = client.watchEvent({
-        address: SPRAY_CONTRACT,
-        event: sprayedEventAbi,
-        args: { partyId: BigInt(partyId) },
+        address: ARENA_CONTRACT,
+        event: tappedEventAbi,
+        args: filter,
         onLogs: (logs) => {
           attempt = 0;
           emit(false, logs);
@@ -179,8 +200,8 @@ export function startFeed(
     unwatch = null;
     attempt += 1;
 
-    // after a few failed sockets, stop fighting it and poll instead — the
-    // projector must never go blank because of a transport preference
+    // after a few failed sockets, stop fighting it and poll instead — the wall
+    // must never go blank because of a transport preference
     if (attempt > 3) {
       startPolling();
       return;
@@ -204,9 +225,9 @@ export function startFeed(
           }
           if (current <= lastBlock) return;
           const logs = await http.getLogs({
-            address: SPRAY_CONTRACT,
-            event: sprayedEventAbi,
-            args: { partyId: BigInt(partyId) },
+            address: ARENA_CONTRACT,
+            event: tappedEventAbi,
+            args: filter,
             fromBlock: lastBlock + 1n,
             toBlock: current,
           });
@@ -220,15 +241,11 @@ export function startFeed(
   }
 
   /**
-   * Replay past sprays on a cold load.
+   * Replay recent taps on a cold load.
    *
-   * The running total and transaction count come back from partyInfo, but the
-   * leaderboard cannot — it is a per-address sum that only exists in the event
-   * log. Without this a browser reload mid-party shows an empty leaderboard
-   * until five more people spray, which on a projector looks broken.
-   *
-   * Best-effort by design: if the RPC refuses the range, the live feed still
-   * works and the leaderboard simply rebuilds from now on.
+   * Without this, a reload shows an empty leaderboard until eight more people
+   * tap, which reads as broken. Best-effort by design: if the RPC refuses the
+   * range, the live feed still works and the board rebuilds from now on.
    */
   async function replayHistory() {
     try {
@@ -239,9 +256,9 @@ export function startFeed(
         if (stopped) return;
         const to = from + HISTORY_CHUNK - 1n > head ? head : from + HISTORY_CHUNK - 1n;
         const logs = await http.getLogs({
-          address: SPRAY_CONTRACT,
-          event: sprayedEventAbi,
-          args: { partyId: BigInt(partyId) },
+          address: ARENA_CONTRACT,
+          event: tappedEventAbi,
+          args: filter,
           fromBlock: from,
           toBlock: to,
         });
@@ -265,25 +282,23 @@ export function startFeed(
 }
 
 /* -------------------------------------------------------------------------
-   Demo mode
+   Spectate mode
    -------------------------------------------------------------------------
-   /stage?demo=1 replays a synthetic event stream at realistic timing through
-   the identical rendering pipeline. If the venue network dies on stage, one
-   query param saves the demo. This is not a mock of the UI — it is the same UI,
-   fed from a different source.
+   Two jobs, one implementation. `?demo=1` replays a synthetic stream through
+   the identical rendering pipeline so the arena can be shown with no network at
+   all; and it is what the bottom rung of the degradation ladder falls back to
+   when the day's budget is spent. This is not a mock of the UI — it is the same
+   UI, fed from a different source.
    ------------------------------------------------------------------------- */
 
 /**
  * The demo cast is derived, not hardcoded — a fixed list of literal addresses
- * would be the one part of the stage that could not be traced back to a real
- * event. These are generated per party so a given demo always shows the same
- * faces, and the leaderboard reorders exactly the way it does with live data.
+ * would be the one part of the arena that could not be traced back to a real
+ * event. Seeded, so the same round always shows the same faces.
  */
-function demoSprayers(partyId: number, n = 9): Address[] {
+function demoPlayers(seed: number, n = 12): Address[] {
   const out: Address[] = [];
-  // xorshift, seeded by the party, so the cast is stable per party and
-  // different between parties
-  let state = (partyId + 1) * 0x9e3779b9;
+  let state = (seed + 1) * 0x9e3779b9;
   const next = () => {
     state ^= state << 13;
     state ^= state >>> 17;
@@ -298,61 +313,60 @@ function demoSprayers(partyId: number, n = 9): Address[] {
   return out;
 }
 
-function startDemoFeed(handlers: FeedHandlers, partyId: number): Feed {
+function startDemoFeed(handlers: FeedHandlers): Feed {
   let stopped = false;
-  let count = 0n;
-  let total = 0n;
   let block = 55_900_000n;
+  let sequence = 0n;
   const timers: ReturnType<typeof setTimeout>[] = [];
-  const sprayers = demoSprayers(partyId);
+  const players = demoPlayers(Math.floor(Date.now() / 86_400_000));
+  const roundTaps = new Map<Address, number>();
+  const lifetime = new Map<Address, bigint>();
 
-  handlers.onStatus("demo", "replaying recorded stream");
+  handlers.onStatus("demo", "synthetic stream");
 
-  const denominations = [100000000000000n, 500000000000000n, 2000000000000000n];
-
-  // Curve: the room takes a few seconds to scan, then it goes off. Matches the
-  // shape of the real thing so the rehearsal is honest.
+  // Curve: a slow trickle, then the arena fills up. Matches the shape of a real
+  // round so a rehearsal is honest.
   function intensityAt(elapsedMs: number): number {
     const t = elapsedMs / 1000;
-    if (t < 4) return 0.12;
-    if (t < 10) return 0.12 + ((t - 4) / 6) * 0.8;
-    if (t < 60) return 0.92 + Math.sin(t / 3) * 0.08;
-    return 0.85;
+    if (t < 4) return 0.15;
+    if (t < 12) return 0.15 + ((t - 4) / 8) * 0.75;
+    return 0.9 + Math.sin(t / 4) * 0.1;
   }
 
   const started = Date.now();
 
   function tick() {
     if (stopped) return;
-    const elapsed = Date.now() - started;
-    const intensity = intensityAt(elapsed);
-
-    // ~260 sprays/sec at full intensity, delivered in per-block clumps
-    const burst = Math.max(1, Math.round(intensity * 26));
+    const intensity = intensityAt(Date.now() - started);
+    const burst = Math.max(1, Math.round(intensity * 22));
     block += 1n;
 
     for (let i = 0; i < burst; i++) {
-      const big = Math.random() < 0.03;
-      const amount = big
-        ? denominations[2] * BigInt(2 + Math.floor(Math.random() * 4))
-        : denominations[Math.floor(Math.random() * (Math.random() < 0.6 ? 2 : 3))];
-      total += amount;
-      count += 1n;
-      handlers.onSpray({
-        sprayer: sprayers[Math.floor(Math.random() * sprayers.length)],
-        amount,
-        newTotal: total,
-        count,
+      const player = players[Math.floor(Math.random() * players.length)];
+      // Most transactions are a single tap; some are a coalesced batch, exactly
+      // as they are when the real arena is tightening.
+      const taps = Math.random() < 0.15 ? 2 + Math.floor(Math.random() * 12) : 1;
+
+      const nextRound = (roundTaps.get(player) ?? 0) + taps;
+      const nextLifetime = (lifetime.get(player) ?? 0n) + BigInt(taps);
+      roundTaps.set(player, nextRound);
+      lifetime.set(player, nextLifetime);
+      sequence += 1n;
+
+      handlers.onTap({
+        player,
+        taps,
+        roundTaps: nextRound,
+        totalTaps: nextLifetime,
         blockNumber: block,
-        txHash: `0x${count.toString(16).padStart(64, "0")}` as Hex,
+        txHash: `0x${sequence.toString(16).padStart(64, "0")}` as Hex,
         at: Date.now(),
         historical: false,
       });
     }
 
     // Monad blocks are ~400ms
-    const t = setTimeout(tick, 400);
-    timers.push(t);
+    timers.push(setTimeout(tick, 400));
   }
 
   tick();

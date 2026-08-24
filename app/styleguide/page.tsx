@@ -1,40 +1,42 @@
-import { DENOMINATIONS } from "@/lib/constants";
-import { formatMonExact } from "@/lib/format";
+import { COMBO_TIERS } from "@/lib/constants";
 
 /**
- * Every token, rendered. This is how palette drift gets caught at hour six
- * instead of argued about. If something on /spray or /stage uses a value that
- * is not on this page, the component is wrong, not this page.
+ * Every token, rendered. This is how palette drift gets caught early instead of
+ * argued about later. If something in the arena uses a value that is not on
+ * this page, the component is wrong, not this page.
  */
 
 const SURFACES = [
-  ["--color-ink", "#0B0B0C", "page background"],
-  ["--color-ink-2", "#141416", "raised panel"],
-  ["--color-ink-3", "#101012", "recessed, tap region"],
-  ["--color-ink-4", "#1C1C1F", "leaderboard row, chip inactive"],
-  ["--color-hairline", "#232326", "borders on dark"],
+  ["--color-ink", "#08080A", "page background"],
+  ["--color-ink-2", "#101014", "raised panel"],
+  ["--color-ink-3", "#0C0C10", "recessed, the tap region"],
+  ["--color-ink-4", "#17171D", "leaderboard row, chip inactive"],
+  ["--color-hairline", "#232329", "borders on dark"],
+  ["--color-hairline-hot", "#33304A", "border on an active/own row"],
 ] as const;
 
 const BRAND = [
-  ["--color-green", "#16C77F", "primary accent, active states"],
-  ["--color-green-deep", "#0E7A4E", "note edge, pressed states"],
-  ["--color-gold", "#E8B33A", "tx/sec + big-spray takeover ONLY"],
+  ["--color-violet", "#836EF9", "primary accent — Monad brand"],
+  ["--color-violet-deep", "#5A46C8", "pressed states, droplet edges"],
+  ["--color-violet-lift", "#9C8BFF", "hover, near droplets"],
+  ["--color-aqua", "#3FE0D0", "live state, combo, anything flowing"],
+  ["--color-aqua-lift", "#7FE9DC", "hot droplets at high combo"],
+  ["--color-amber", "#F5B33C", "records + budget warnings ONLY"],
 ] as const;
 
-const NOTES = [
-  ["--color-note-fill", "#14361E", "particle body"],
-  ["--color-note-edge", "#1F6438", "particle edge"],
-  ["--color-note-fill-hi", "#1B4A28", "in flight, near camera"],
-  ["--color-note-edge-hi", "#20613A", "in flight edge"],
-  ["--color-note-dim", "#173B21", "far/background particles"],
+const DROPLETS = [
+  ["--color-drop", "#9C8BFF", "near droplet"],
+  ["--color-drop-edge", "#6B55E0", "mid droplet"],
+  ["--color-drop-dim", "#4A3E8F", "far/background droplet"],
+  ["--color-drop-hot", "#7FE9DC", "combo droplet"],
 ] as const;
 
 const TEXT = [
-  ["--color-paper", "#FAF7F0", "primary text, never pure white"],
-  ["--color-text-2", "#9C9992", "secondary"],
-  ["--color-text-3", "#8F8C86", "tertiary"],
-  ["--color-text-4", "#6B6862", "labels, meta, smallest caps"],
-  ["--color-danger", "#C0392B", "internal/debug only, never in the demo"],
+  ["--color-paper", "#F5F3FF", "primary text, never pure white"],
+  ["--color-text-2", "#A5A2B8", "secondary"],
+  ["--color-text-3", "#8B8899", "tertiary"],
+  ["--color-text-4", "#6A6878", "labels, meta, smallest caps"],
+  ["--color-danger", "#E0524A", "claim failures, budget exhaustion"],
 ] as const;
 
 function Swatches({
@@ -73,7 +75,7 @@ export default function StyleGuide() {
   return (
     <main className="min-h-dvh bg-ink px-6 py-12 sm:px-12">
       <header className="mb-14">
-        <h1 className="t-personal-total text-paper">Styleguide</h1>
+        <h1 className="t-display text-paper">Styleguide</h1>
         <p className="t-meta mt-3">
           authoritative token set · app/globals.css · nothing outside this page
           may appear in the product
@@ -82,124 +84,111 @@ export default function StyleGuide() {
 
       <Swatches title="surfaces" rows={SURFACES} />
       <Swatches title="brand" rows={BRAND} />
-      <Swatches title="naira notes" rows={NOTES} />
+      <Swatches title="droplets" rows={DROPLETS} />
       <Swatches title="type on dark" rows={TEXT} />
 
-      {/* ---- type scales ---- */}
+      {/* ---- type scale ---- */}
       <section className="mb-14">
-        <p className="t-section mb-5">type scale — phone (/spray)</p>
-        <div className="space-y-6 rounded-panel border border-hairline bg-ink-2 p-6">
+        <p className="t-section mb-5">type scale — fluid, one surface</p>
+        <div className="space-y-8 overflow-x-auto rounded-panel border border-hairline bg-ink-2 p-6">
           <div>
-            <p className="t-personal-total text-paper">₦1,204,500</p>
-            <p className="t-meta mt-2">personal total · Archivo 800 · 40/1.0 · tabular</p>
-          </div>
-          <div>
-            <p className="t-chip text-paper">₦500</p>
-            <p className="t-meta">(0.0005 MON)</p>
+            <p className="t-hero whitespace-nowrap text-paper">128.4k</p>
             <p className="t-meta mt-2">
-              denomination chip · JetBrains 700 · 13px, with the MON equivalent
-              beneath at 9px
+              hero · Archivo 900 · clamp(56px, 15vw, 132px) · tabular
             </p>
           </div>
           <div>
-            <p className="t-tap-label text-paper">tap to spray · hold to pour</p>
-            <p className="t-meta mt-2">tap label · JetBrains 700 · 12px · 0.08em</p>
+            <p className="t-display text-paper">0.284 MON</p>
+            <p className="t-meta mt-2">display · Archivo 800 · clamp(30px, 6vw, 52px)</p>
           </div>
           <div>
-            <p className="t-party">party #0</p>
-            <p className="t-meta mt-2">party name · JetBrains 400 · 10px</p>
+            <p className="t-stat text-aqua">261.4</p>
+            <p className="t-meta mt-2">stat · Archivo 800 · clamp(22px, 3.4vw, 34px)</p>
           </div>
           <div>
-            <p className="t-meta">0x7f2a…4b3c · 214/220 sent</p>
-            <p className="t-meta mt-2">meta line · JetBrains 400 · 9px</p>
-          </div>
-        </div>
-      </section>
-
-      <section className="mb-14">
-        <p className="t-section mb-5">type scale — projector (/stage)</p>
-        <div className="space-y-8 overflow-x-auto rounded-panel border border-hairline bg-ink-2 p-6">
-          <div>
-            <p className="t-total whitespace-nowrap text-paper">₦8,750,000</p>
-            <p className="t-meta mt-2">total sprayed · Archivo 900 · 128/0.95 · tabular</p>
+            <p className="t-body text-text-2">
+              A testnet faucet you have to earn. Every tap is a real transaction.
+            </p>
+            <p className="t-meta mt-2">body · Inter · clamp(15px, 1.6vw, 18px)</p>
           </div>
           <div>
-            <span className="inline-block bg-gold px-6 py-4">
-              <span className="t-tps" style={{ color: "var(--color-ink)" }}>
-                261.4
-              </span>
-            </span>
-            <p className="t-meta mt-2">tx/sec · Archivo 800 · 48px · gold block, ink text</p>
+            <p className="t-label text-paper">tap · or hold</p>
+            <p className="t-meta mt-2">label · JetBrains 700 · 12px · 0.08em</p>
           </div>
           <div>
-            <p className="t-section">top sprayers</p>
-            <p className="t-meta mt-2">section label · JetBrains 400 · 18px</p>
+            <p className="t-section">today&apos;s board</p>
+            <p className="t-meta mt-2">section · JetBrains 400 · clamp(11px, 1.1vw, 14px)</p>
           </div>
           <div className="flex max-w-md items-center justify-between rounded-panel bg-ink-4 px-5 py-3">
             <span className="t-lb-addr text-text-2">0x7f2a…4b3c</span>
-            <span className="t-lb-value text-paper">₦412,000</span>
+            <span className="t-lb-value text-paper">1,284</span>
           </div>
-          <p className="t-meta">leaderboard row · 24px · value tabular, right-aligned</p>
+          <p className="t-meta">leaderboard row · value tabular, right-aligned</p>
         </div>
       </section>
 
-      {/* ---- chip states ---- */}
+      {/* ---- combo tiers ---- */}
       <section className="mb-14">
-        <p className="t-section mb-5">chip states</p>
+        <p className="t-section mb-5">combo tiers</p>
         <div className="flex flex-wrap gap-3">
-          {DENOMINATIONS.map((d, i) => (
-            <span
-              key={d.id}
-              className={[
-                "rounded-chip border px-8 py-3 text-center",
-                i === 1
-                  ? "border-green bg-green text-ink"
-                  : "border-hairline bg-ink-4 text-text-2",
-              ].join(" ")}
-            >
-              <span className="t-chip block">{d.label}</span>
+          {COMBO_TIERS.map((tier) => {
+            const hot = tier.at >= 10;
+            return (
               <span
-                className="t-meta mt-1 block"
-                style={i === 1 ? { color: "var(--color-ink)", opacity: 0.62 } : undefined}
-              >
-                ({formatMonExact(d.value)})
-              </span>
-            </span>
-          ))}
-          <span className="t-chip rounded-chip border border-green-deep bg-green-deep px-8 py-4 text-paper">
-            pressed
-          </span>
-        </div>
-      </section>
-
-      {/* ---- note sprite ---- */}
-      <section className="mb-14">
-        <p className="t-section mb-5">note sprite (static)</p>
-        <div className="flex flex-wrap items-center gap-6 rounded-panel border border-hairline bg-ink-3 p-8">
-          {[
-            ["near", "var(--color-note-fill-hi)", "var(--color-note-edge-hi)", 1],
-            ["mid", "var(--color-note-fill)", "var(--color-note-edge)", 0.8],
-            ["far", "var(--color-note-dim)", "var(--color-note-edge)", 0.55],
-          ].map(([label, fill, edge, scale]) => (
-            <div key={String(label)} className="flex flex-col items-center gap-3">
-              <span
-                className="relative block rounded-[4px] border"
+                key={tier.label}
+                className="t-chip rounded-chip px-5 py-3 text-center"
                 style={{
-                  width: 116 * Number(scale),
-                  height: 60 * Number(scale),
-                  background: String(fill),
-                  borderColor: String(edge),
+                  background: hot ? "var(--color-aqua)" : "var(--color-ink-4)",
+                  color: hot ? "var(--color-ink)" : "var(--color-text-3)",
                 }}
               >
+                <span className="block">
+                  {tier.at === 0 ? "tap" : `${tier.at}×`} {tier.label}
+                </span>
                 <span
-                  className="absolute inset-[6px] rounded-[2px] border"
-                  style={{ borderColor: "var(--color-gold)", opacity: 0.45 }}
-                />
+                  className="t-meta mt-1 block"
+                  style={hot ? { color: "var(--color-ink)", opacity: 0.62 } : undefined}
+                >
+                  {tier.particles} droplets
+                </span>
               </span>
+            );
+          })}
+        </div>
+        <p className="t-meta mt-3">
+          combo drives particle density and nothing that pays — anything that
+          rewarded <em>how</em> you tap rather than <em>that</em> you tap is a
+          thing a script does better than a person
+        </p>
+      </section>
+
+      {/* ---- droplet sprite ---- */}
+      <section className="mb-14">
+        <p className="t-section mb-5">droplet sprite (static)</p>
+        <div className="flex flex-wrap items-center gap-8 rounded-panel border border-hairline bg-ink-3 p-8">
+          {[
+            ["near", "var(--color-drop)", 1, 2.4],
+            ["mid", "var(--color-drop-edge)", 0.8, 1.7],
+            ["far", "var(--color-drop-dim)", 0.6, 1.2],
+            ["combo", "var(--color-drop-hot)", 1, 2.4],
+          ].map(([label, fill, scale, stretch]) => (
+            <div key={String(label)} className="flex flex-col items-center gap-3">
+              <span
+                className="block rounded-full"
+                style={{
+                  width: 18 * Number(scale) * Number(stretch),
+                  height: 18 * Number(scale),
+                  background: String(fill),
+                }}
+              />
               <span className="t-meta">{label}</span>
             </div>
           ))}
         </div>
+        <p className="t-meta mt-3">
+          stretched along the direction of travel, easing off as the droplet
+          slows — a round dot reads as a bubble, a stretched one reads as water
+        </p>
       </section>
 
       {/* ---- motion ---- */}
@@ -220,14 +209,17 @@ export default function StyleGuide() {
             </div>
           ))}
         </div>
+        <p className="t-meta mt-3">
+          every motion token is disabled under prefers-reduced-motion
+        </p>
       </section>
 
       {/* ---- tabular proof ---- */}
       <section className="mb-8">
         <p className="t-section mb-5">tabular figures — no horizontal shift</p>
         <div className="rounded-panel border border-hairline bg-ink-2 p-6">
-          {["₦999", "₦1,000", "₦11,111", "₦88,888"].map((n) => (
-            <p key={n} className="t-personal-total text-paper">
+          {["999", "1,000", "11,111", "88,888"].map((n) => (
+            <p key={n} className="t-display text-paper">
               {n}
             </p>
           ))}

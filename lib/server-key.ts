@@ -8,11 +8,11 @@ import type { Hex } from "viem";
  *
  *     invalid private key, expected hex or 32 bytes, got string
  *
- * That surfaced as a 500 with a stack trace, which is exactly the thing the
- * constitution says must not happen during the demo. A key pasted without the
- * 0x prefix is the overwhelmingly common way to get it — every explorer and
- * faucet shows keys bare — so normalise it rather than punishing the paste, and
- * fail loudly and clearly when it genuinely is not a key.
+ * That surfaced as a 500 with a stack trace on the route that hands out money.
+ * A key pasted without the 0x prefix is the overwhelmingly common way to get it
+ * — every explorer and faucet shows keys bare — so normalise it rather than
+ * punishing the paste, and fail loudly and clearly when it genuinely is not a
+ * key.
  *
  * Note for anyone debugging env precedence: Next loads .env.local AFTER .env,
  * so .env.local wins. A good key in .env does not help if .env.local has a bad
@@ -25,7 +25,7 @@ export type KeyResult =
   | { ok: true; key: Hex }
   | { ok: false; reason: "missing" | "malformed" };
 
-export function loadPrivateKey(name = "FUNDING_PRIVATE_KEY"): KeyResult {
+export function loadPrivateKey(name = "HOUSE_PRIVATE_KEY"): KeyResult {
   const raw = process.env[name];
   if (!raw || raw.trim() === "") return { ok: false, reason: "missing" };
 
@@ -46,9 +46,9 @@ export function keyErrorResponse(reason: "missing" | "malformed") {
     : {
         body: {
           ok: false as const,
-          error: "bad_funding_key",
+          error: "bad_house_key",
           hint:
-            "FUNDING_PRIVATE_KEY must be a 32-byte hex private key. Check " +
+            "HOUSE_PRIVATE_KEY must be a 32-byte hex private key. Check " +
             ".env.local — it overrides .env.",
         },
         status: 503,

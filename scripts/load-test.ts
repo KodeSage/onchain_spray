@@ -8,8 +8,8 @@
  * Reports: transactions landed, dropped, 429s per endpoint, and p50/p95
  * tap-to-confirm latency.
  *
- * Requires a funded master wallet (FUNDING_PRIVATE_KEY) — it funds M burners,
- * fires N sprays from each, then watches for the receipts. In --dry mode it
+ * Requires a funded house wallet (HOUSE_PRIVATE_KEY) — it funds M burners,
+ * fires N taps from each, then watches for the receipts. In --dry mode it
  * signs everything locally and reports throughput without spending anything,
  * which still exercises the nonce path and the batching maths.
  */
@@ -27,16 +27,15 @@ import {
 } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { monadTestnet } from "../lib/chain";
-import { sprayPartyAbi } from "../lib/contract";
+import { tapArenaAbi } from "../lib/contract";
 import { ENDPOINTS } from "../lib/rpc";
 import { envOr } from "../lib/env";
 import {
-  DENOMINATIONS,
   MAX_BATCH_SIZE,
   MAX_FEE_PER_GAS,
   MAX_PRIORITY_FEE_PER_GAS,
-  SPRAY_GAS_LIMIT,
-  SPRAY_GAS_LIMIT_FIRST,
+  TAP_GAS_LIMIT,
+  TAP_GAS_LIMIT_FIRST,
   BATCH_WINDOW_MS,
 } from "../lib/constants";
 
@@ -61,7 +60,6 @@ const CLIENTS = arg("clients", 130);
 const TAPS_PER_SEC = arg("taps", 2);
 const DURATION = arg("duration", 60);
 const DRY = process.argv.includes("--dry");
-const PARTY_ID = BigInt(arg("party", 0));
 
 type Sent = { hash: Hex; at: number };
 
@@ -71,9 +69,9 @@ for (const e of ENDPOINTS) rateLimitByEndpoint.set(e.id, 0);
 async function main() {
   loadEnv();
 
-  const contract = process.env.NEXT_PUBLIC_SPRAY_CONTRACT as Address | undefined;
+  const contract = process.env.NEXT_PUBLIC_ARENA_CONTRACT as Address | undefined;
   if (!contract) {
-    console.error("NEXT_PUBLIC_SPRAY_CONTRACT not set — deploy the contract first.");
+    console.error("NEXT_PUBLIC_ARENA_CONTRACT not set — deploy the contract first.");
     console.error("Run with --dry to exercise signing and batching without a contract.");
     if (!DRY) process.exit(1);
   }
@@ -100,9 +98,9 @@ async function main() {
 
   /* ---- funding --------------------------------------------------------- */
   if (!DRY) {
-    const masterKey = process.env.FUNDING_PRIVATE_KEY;
+    const masterKey = process.env.HOUSE_PRIVATE_KEY;
     if (!masterKey) {
-      console.error("\nFUNDING_PRIVATE_KEY not set — cannot fund burners.");
+      console.error("\nHOUSE_PRIVATE_KEY not set — cannot fund burners.");
       console.error("Either set it, or run with --dry.");
       process.exit(1);
     }
@@ -154,9 +152,8 @@ async function main() {
 
   /* ---- the run --------------------------------------------------------- */
   const data = encodeFunctionData({
-    abi: sprayPartyAbi,
-    functionName: "spray",
-    args: [PARTY_ID],
+    abi: tapArenaAbi,
+    functionName: "tap",
   });
 
   const sent: Sent[] = [];
@@ -222,16 +219,16 @@ async function main() {
         burners.map(async (b) => {
           const n = nonces.get(b.address)!;
           nonces.set(b.address, n + 1);
-          const denom = DENOMINATIONS[1];
           try {
             const raw = await b.signTransaction({
               chainId: monadTestnet.id,
               type: "eip1559",
               to: (contract ?? "0x0000000000000000000000000000000000000000") as Address,
-              value: denom.value,
+              // a tap carries no value; it is a faucet, not a payment
+              value: 0n,
               data,
               nonce: n,
-              gas: n === 0 ? SPRAY_GAS_LIMIT_FIRST : SPRAY_GAS_LIMIT,
+              gas: n === 0 ? TAP_GAS_LIMIT_FIRST : TAP_GAS_LIMIT,
               maxFeePerGas: MAX_FEE_PER_GAS,
               maxPriorityFeePerGas: MAX_PRIORITY_FEE_PER_GAS,
             });

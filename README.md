@@ -1,68 +1,36 @@
 <div align="center">
 
-# 💸 Onchain Spray
+# 💧 Tap
 
-**At a Nigerian party you don't send one transfer — you spray hundreds of small
-notes, as fast as the music.**
+**A testnet faucet you have to earn.**
 
-Owambe culture rebuilt as thousands of micro-transactions per minute on Monad.
-Scan a QR, tap a stack of notes, and every single tap is a real on-chain
-transaction. No wallet popup. No signing prompt. No confirmation. Ever.
+`faucet.monad.xyz` gives you MON and you leave. Tap makes you work for it — in a
+live global arena where every tap is a real transaction on Monad, and where
+coming back tomorrow is the point.
 
-[![Live Demo](https://img.shields.io/badge/▶_Live_Demo-onchain--spray.vercel.app-00D26A?style=for-the-badge)](https://onchain-spray.vercel.app/)
-[![Contract](https://img.shields.io/badge/Contract-0x1fd7…16ff-836EF9?style=for-the-badge)](https://testnet.monadvision.com/address/0x1fd73540851e43883d7742ee04eeca5f750d16ff)
-[![Monad Testnet](https://img.shields.io/badge/Monad-Testnet_10143-FFC940?style=for-the-badge)](https://testnet.monadvision.com/)
+A tap is a faucet. Tapping is the game.
 
-Built in one day at **Monad Blitz Abuja**.
+[![Monad Testnet](https://img.shields.io/badge/Monad-Testnet_10143-836EF9?style=for-the-badge)](https://testnet.monadvision.com/)
+[![License](https://img.shields.io/badge/License-MIT-3FE0D0?style=for-the-badge)](LICENSE)
 
 </div>
 
 ---
 
-## 🔗 Deployment
-
-Live on Monad testnet (chain `10143`). Everything below is verifiable on chain
-right now — no screenshots, no mocks.
-
-| | |
-|---|---|
-| **Live demo** | **<https://onchain-spray.vercel.app/>** |
-| **Deployed contract** | [`0x1fd73540851e43883d7742Ee04EeCa5f750D16ff`](https://testnet.monadvision.com/address/0x1fd73540851e43883d7742ee04eeca5f750d16ff) |
-| **Deployment transaction** | [`0x1305e195f03face3f03f64e0b32715d13f1ebe72d23b71e0eb3ccfd10bb05188`](https://testnet.monadvision.com/tx/0x1305e195f03face3f03f64e0b32715d13f1ebe72d23b71e0eb3ccfd10bb05188) |
-| **Deployed at** | block `55,928,828` · 2026-08-22 11:50:31 UTC |
-| **Deploy gas used** | 779,509 @ 104.5 gwei |
-| **Contract source** | [`contracts/src/SprayParty.sol`](contracts/src/SprayParty.sol) |
-| **Explorer** | [MonadVision](https://testnet.monadvision.com/) |
-
-### See it without installing anything
-
-| link | what it shows |
-|---|---|
-| [**Landing**](https://onchain-spray.vercel.app/) | enter a wallet address, open a party |
-| [**Stage / projector**](https://onchain-spray.vercel.app/stage/0) | the room's view — live total, leaderboard, tx/sec, flying notes |
-| [**Spray / phone**](https://onchain-spray.vercel.app/spray/0) | open on your phone and tap. It really sends transactions |
-| [**Offline demo**](https://onchain-spray.vercel.app/stage/0?demo=1) | identical render pipeline, **zero** network calls |
-| [**Styleguide**](https://onchain-spray.vercel.app/styleguide) | every design token, rendered |
-
-> Party `0` on the live contract is **"Monad Blitz Abuja"**. Four parties have
-> been opened on this deployment so far.
-
----
-
 ## The one rule that matters
 
-> ### A spray must never open a wallet popup. Not once.
+> ### A tap must never open a wallet popup. Not once.
 
-That single constraint dictates the entire architecture. If any tap required
-user confirmation, the product would not exist — you cannot approve a MetaMask
-prompt two hundred times in ninety seconds while dancing.
+That single constraint dictates the architecture. Signing happens locally, with
+a burner key generated in the browser, funded by the house. You paste an address
+for your payout and nothing else. You never connect a wallet.
 
 **Measured budget:**
 
 | | target | measured |
 |---|---|---|
-| tap → visible note | < 100ms | **~16ms** (one frame, optimistic) |
-| synchronous cost of a tap | — | **p50 0.48ms · p95 0.55ms** |
+| tap → visible droplet | < 100ms | one frame (~16ms), optimistic |
+| synchronous cost of a tap | — | local sign + hash only, no network |
 | tap → on-chain confirmation | < 1s | sub-second |
 
 Verify it yourself: `npm run bench`.
@@ -72,303 +40,258 @@ Verify it yourself: `npm run bench`.
 ## How it works
 
 ```
-        PHONE  /spray/:id                          PROJECTOR  /stage/:id
-  ┌────────────────────────────┐            ┌──────────────────────────────┐
-  │  burner key in localStorage│            │  ONE websocket subscription  │
-  │  local nonce counter       │            │  totals + leaderboard        │
-  │  sign locally  (0.5ms)     │            │    rebuilt from events only  │
-  │  no RPC call in tap path   │            │  canvas particle pool (3000) │
-  └─────────────┬──────────────┘            └──────────────▲───────────────┘
-                │ POST signed raw tx                       │
-                ▼                                          │
-        ┌───────────────┐   JSON-RPC batch ×100    ┌────────┴────────┐
-        │  /api/relay   │ ───────────────────────► │  Monad testnet  │
-        │ batches ACROSS│                          │   chain 10143   │
-        │  all clients  │ ◄─── Sprayed event ──────│                 │
-        └───────────────┘                          └─────────────────┘
+                          YOU                                  EVERYONE
+   ┌───────────────────────────────────┐        ┌──────────────────────────────┐
+   │ 1. page loads                     │        │  ONE websocket subscription  │
+   │    burner key generated + funded  │        │  filtered to today's round   │
+   │    in the background              │        │                              │
+   │                                   │        │  leaderboard + totals + tx/s │
+   │ 2. you tap                        │───tx──▶│    rebuilt from events only  │
+   │    signed locally, 0 round trips  │        │                              │
+   │    droplet on the next frame      │◀─event─│  canvas droplet pool (3000)  │
+   │                                   │        │  full-bleed page background  │
+   │ 3. 25 taps unlocks a claim        │        └──────────────────────────────┘
+   │    paste an address, prove human  │
+   │    house settles it on chain      │
+   └───────────────────────────────────┘
 ```
 
-### 1. Burner keys in the browser — this is the whole trick
-
-On first visit the phone generates a private key with viem, stores it in
-`localStorage`, and receives a small drip of testnet MON from `/api/fund`.
-Nothing is ever confirmed by the user **because the key is local**.
-
-The person *being sprayed* needs even less. They type their wallet address on
-the landing page, `/api/create-party` opens a party for them, and every naira
-sprayed there is payable to that address on chain. No extension, no gas, no
-signature — **on either side of the transaction.**
-
-### 2. The tap path touches the network zero times
-
-A nonce comes from a local counter. The transaction is signed locally. The
-signed payload goes on a queue. There is no `eth_estimateGas`, no fee lookup, no
-nonce fetch, no awaited receipt. The note animation fires optimistically inside
-the `pointerdown` handler — before signing even begins.
-
-### 3. A cross-client relay makes the rate limits fit
-
-This was the hardest problem, and the first solution was wrong.
-
-The obvious plan is to batch taps *inside* each client. Measured, that gives
-**1.0× compression and does nothing** — one person tapping twice a second
-accumulates 0.3 transactions per 150ms window. To fill a batch of ten inside one
-client you would have to tap 67 times a second.
-
-Batching has to happen **across clients**. 130 phones at 2 taps/sec is 260
-tx/sec arriving at `/api/relay`; flushed every 150ms and forwarded as JSON-RPC
-batches of up to 100, that collapses to a handful of requests per second against
-a 50 rps limit.
-
-Clients still sign locally — the relay forwards opaque signed payloads and
-**cannot alter, reorder within a sender, or forge them. It never sees a key.**
-
-### 4. The event *is* the entire read API
-
-`Sprayed` carries `newTotal` and `count` in its payload, so the projector
-reconstructs the running total and the leaderboard from events alone — one
-websocket, no polling, **zero contract reads**. Party identity is read once at
-mount from `partyInfo`, so nothing about the party is hardcoded in a component.
-
-### 5. Canvas particles, not DOM
-
-A preallocated pool of 3,000 note objects rendered on a Canvas 2D context.
-Nothing is allocated per spray.
+There are no rooms and no instances. One global arena, one leaderboard, one
+round for everybody, rolling over at 00:00 UTC.
 
 ---
 
-## ⛽ Gas engineering
+## Why a game, and not just a faucet
 
-On Monad **you pay for the gas `limit`, not gas used.** A padded limit is not
-free headroom — it is a direct per-tap cost multiplier, paid on every one of the
-~17,000 taps in a 90-second demo. So `spray()` was designed backwards from a gas
-budget.
+Every faucet has the same problem: it is a free money endpoint on the public
+internet, and the people most motivated to use it are scripts. The usual answers
+are captchas and wallet-age heuristics, which are a tax on real users and a
+speed bump for everyone else.
 
-Measured with `npm run contracts:gas`:
+Making the faucet a game changes what an attacker has to spend. A bot can solve
+a captcha. A bot cannot skip 25 transactions' worth of gas and wall-clock time
+per address per day without that becoming the expensive part of the attack — and
+if it does pay that, it has paid the house's own cost of service in Monad
+transactions, which is not the worst outcome a testnet faucet can have.
 
-| case | EVM pricing | Monad (cold SLOAD 8,100, not 2,100) | limit shipped |
-|---|---|---|---|
-| steady-state spray | 47,883 | **~59,883** | `62,000` |
-| first spray per address | 64,983 | **~76,983** | `80,000` |
-
-The first spray costs more because `sprayedBy` goes zero → non-zero
-(`SSTORE_SET`, 20,000). The client ships **two** gas limits accordingly — paying
-the first-spray limit on all 300 taps would waste ~25% of every burner's balance.
-
-Structural choices that follow from that budget:
-
-- no dynamic arrays
-- `bytes32` party names — no string writes in the hot path
-- no external calls during `spray()` (the recipient is paid later, on a timer)
-- the `Party` struct is ordered so the three fields `spray()` touches —
-  `active`, `total`, `count` — share **one** storage slot
-
-```
-slot 0 │ host (20 bytes) + withdrawn (12 bytes)   ← exactly full
-slot 1 │ recipient
-slot 2 │ name (bytes32)
-slot 3 │ active (1) + total (16) + count (8)      ← the hot slot
-```
-
-`spray()` reads and writes slot 3 and nothing else in the struct: one cold
-SLOAD, one warm SSTORE. `recipient` deliberately lives outside the hot path, so
-adding it costs `spray()` nothing.
-
-> **Known trade-off, stated honestly.** The `sprayedBy` mapping costs ~11,000
-> gas per tap (~18%) and nothing in the demo reads it — the leaderboard is
-> rebuilt from events. Removing it would bring steady-state under the 50,000
-> target and cut the funding budget by ~16%. It is kept because it is the
-> on-chain record of who sprayed what.
+The side effect is the actually valuable one: **you learn what the chain feels
+like before you need it.** You do not read that Monad is fast, you tap two
+hundred times and watch every tap land.
 
 ---
 
-## 📜 Contract
+## The contract
 
-[`contracts/src/SprayParty.sol`](contracts/src/SprayParty.sol) — **21 tests, all
-passing** (`npm run contracts:test`), including fuzz coverage on spray
-accumulation.
+[`contracts/src/TapArena.sol`](contracts/src/TapArena.sol) — ~260 lines, no
+dependencies, no proxies.
+
+Three decisions carry the whole design, and all three are Monad-specific:
+
+### One packed slot per player
 
 ```solidity
-createParty(bytes32 name, address recipient) returns (uint256 partyId)
-spray(uint256 partyId) payable          // the hot path
-payout(uint256 partyId)                 // permissionless — always pays `recipient`
-endParty(uint256 partyId)               // host only
-partyInfo(uint256 partyId) view         // tooling only, never in the hot path
-
-event Sprayed(uint256 indexed partyId, address indexed sprayer,
-              uint256 amount, uint256 newTotal, uint64 count);
-event PartyCreated(uint256 indexed partyId, address indexed host,
-                   address indexed recipient, bytes32 name);
+struct Player {
+    uint32 round;         // the round roundTaps belongs to
+    uint32 roundTaps;     // the leaderboard number
+    uint64 totalTaps;     // lifetime
+    uint32 claimedRound;  // last round settled
+    uint96 claimedTotal;  // lifetime wei claimed
+}   // 32+32+64+32+96 = 256 bits, exactly one slot
 ```
 
-**`recipient` is set once at creation and is immutable.** The host cannot
-redirect the money to themselves — there is a test for exactly that
-(`test_payout_hostCannotTakeTheMoney`).
+Cold storage access costs **8,100 gas on Monad** versus 2,100 on Ethereum, so
+the number of distinct slots the hot path touches is the dominant cost. `tap()`
+touches one — a cold SLOAD, a warm SSTORE, a log, and nothing else.
 
-**`payout` is deliberately permissionless.** The funds can only ever reach the
-address fixed at creation, so letting the stage trigger the sweep on a timer is
-free and means the person being sprayed needs no gas and no wallet popup. The
-money lands in their wallet *while the room is still spraying.*
+### No global counter
 
-**`spray()` deliberately does not forward per tap.** A value-bearing call to a
-cold account on every tap is ~19,000 extra gas on Monad — a ~32% increase on a
-function called thousands of times a minute, plus reentrancy surface on the
-hottest path in the system. Sweeping on a timer costs one transaction per sweep.
+Monad executes transactions optimistically in parallel and re-executes them on
+conflict. A single shared `totalTaps` slot would put every tap in the arena in
+conflict with every other tap. Correctness would be unaffected; throughput would
+not — and throughput is the thing this app exists to show.
+
+So there is no global state in the hot path at all. Two players share no slot,
+and every global number on screen is reconstructed on the client from `Tapped`
+events. `roundTaps` is emitted as an **absolute** value rather than a delta,
+which is what makes the reconstruction exact: a duplicated, reordered or
+re-delivered event converges to the same total, because the last write for a
+player wins instead of accumulating.
+
+For the same reason there is no pause flag on `tap()`. Reading one would
+reintroduce exactly the shared cold slot the design removes. The arena is gated
+off-chain, at the operator.
+
+### Rounds are derived, not stored
+
+```solidity
+function currentRound() public view returns (uint32) {
+    return uint32(block.timestamp / 1 days) + 1;
+}
+```
+
+Nobody pays gas to start a round, there is no rollover transaction, and there is
+no shared "current round" slot for taps to contend on. A player's tally resets
+because the round stamped in their slot no longer matches — which costs nothing
+and happens lazily, on their next tap.
+
+The `+ 1` is load-bearing: rounds are 1-based so that `claimedRound == 0` can
+unambiguously mean *never claimed*.
 
 ---
 
-## 🚀 Local setup
+## Measured gas
 
-Requires **Node 20+** and [Foundry](https://book.getfoundry.sh/getting-started/installation).
+Every number below comes from `npm run contracts:gas`
+([`contracts/test/TapGas.t.sol`](contracts/test/TapGas.t.sol)), Monad-adjusted
+for the 8,100-gas cold SLOAD. **On Monad the sender pays for the gas `limit`,
+not gas used**, so these are what the house actually pays.
+
+| | gas | MON @ 100 gwei |
+|---|---|---|
+| `tap()` steady-state | **40,058** | 0.0040 |
+| `tap()` first for an address | 57,146 | 0.0057 |
+| `tap()` first of a new round | 40,046 | 0.0040 — rollover is free |
+| `tapBatch(8)` | 39,931 | **0.0005 / tap** |
+| `tapBatch(64)` | 39,931 | **0.000062 / tap** |
+| `settleClaim()` | 47,133 call gas | one per player per round |
+
+The measurement is deliberately awkward to make it honest: one measurement per
+test function, because the EVM access list resets per transaction, with the
+warm-up written in `setUp()` so the number reflects a **cold slot holding a
+non-zero value** — which is what tap number seven actually costs, rather than
+the fiction you get from measuring two taps in a row.
+
+---
+
+## Faucet economics
+
+The house pays for gameplay *and* the drip, so the cost per player has to be
+bounded by construction rather than by hoping.
+
+```
+  burner top-up target      0.15 MON     ~37 single taps
+  daily gas budget/address  0.30 MON     ~75 single taps
+  drip                      0.05 MON + 0.001/tap, capped at 0.5 MON
+  ────────────────────────────────────────────────────────────────
+  worst case per player     0.80 MON per round
+```
+
+When an address exhausts its daily gas budget the client does not stop — it
+switches to `tapBatch`, where a tap costs **1/64th** as much. Heavy play
+automatically becomes the cheap path, so the cost per player converges no matter
+how long someone plays.
+
+The drip scales with tap count and **nothing else**. Combo, streak and rank are
+deliberately excluded from the formula: anything that pays out for *how* you
+tapped rather than *that* you tapped is a thing a script does better than a
+person. Combo is worth chasing because it looks good, not because it pays.
+
+---
+
+## Trust model
+
+Stated plainly, because a faucet that overstates its guarantees is worse than
+one that has none.
+
+**The contract is trustless about eligibility.** `settleClaim` proves the taps
+happened, that they happened in the round being claimed, that they clear
+`MIN_TAPS_TO_CLAIM`, and that nobody is paid twice. Double-claim prevention
+lives on chain specifically so it survives the off-chain rate limiter being
+wiped, cold-started or misconfigured — and so anyone can audit the payout
+history from the `Claimed` log.
+
+**The contract is operator-trusted about the amount.** It cannot see a Turnstile
+token, an IP address or a Redis counter, so it cannot know what the drip *should*
+be. It enforces a `MAX_CLAIM` ceiling as a rail against a bug in the formula,
+and otherwise takes the operator's word. The drip rides in as `msg.value` rather
+than from a pool the contract holds, so there is no balance sitting in the arena
+to drain.
+
+**Off-chain, the faucet fails closed.** Missing Redis or a missing Turnstile
+secret is not a degraded faucet, it is an open wallet, so in production both are
+required and the routes return 503 without them. Rate limits key on the *payout*
+address, not the burner — burners are free and infinite, the payout address is
+the thing an attacker actually wants filled.
+
+---
+
+## Degradation ladder
+
+The arena never shows an error where it can show less arena.
+
+| rung | trigger | behaviour |
+|---|---|---|
+| **open** | budget healthy | one tap, one transaction, full droplet density |
+| **tightening** | < 35% of the day's budget left | taps coalesce into `tapBatch` — same score, a fraction of the gas |
+| **spectate** | < 5% left | taps stop settling; the live wall still runs on everyone else's taps, and the claim panel says when it refills |
+
+`/?demo=1` drives the identical rendering pipeline from a synthetic event
+stream, with **zero** network calls — useful for showing the arena offline, and
+it is the same code path spectate mode falls back to.
+
+---
+
+## Running it
 
 ```bash
-git clone <this repo>
-cd onchain_spray
 npm install
-
-cp .env.example .env.local
-cp .env.example .env          # Foundry reads .env
-```
-
-Put a funded Monad testnet key in `.env` as `PRIVATE_KEY` (get MON from
-[faucet.monad.xyz](https://faucet.monad.xyz)). That wallet becomes the party
-host. Set `PARTY_NAME` to whoever is being sprayed. Then:
-
-```bash
-npm run contracts:test        # 21 tests
-npm run deploy                # deploys, verifies, writes the address to .env.local
+cp .env.example .env.local     # fill in HOUSE_PRIVATE_KEY at minimum
 npm run dev
 ```
 
-Open <http://localhost:3000/stage/0> on the projector and
-<http://localhost:3000/spray/0> on a phone.
+Redis and Turnstile may be left unset in development — the store falls back to
+an in-process stand-in and the captcha is skipped, both loudly. In production
+their absence closes the faucet.
 
-### Run it with no contract and no key
-
-```bash
-npm run dev
-# → http://localhost:3000/stage/0?demo=1    synthetic events, zero network calls
-# → http://localhost:3000/styleguide        every design token
-```
-
-Both work on a fresh clone.
-
-### Build note
-
-Production builds use **webpack** (`next build`), not Turbopack. On Next 15.5.23
-`next build --turbopack` emits an incomplete `app-paths-manifest.json` and
-silently 404s `/api/relay`, `/styleguide` and `/opengraph-image`. Dev uses
-Turbopack and is unaffected. Verify after any Next upgrade:
+### Deploy the contract
 
 ```bash
-npx next build && cat .next/server/app-paths-manifest.json   # expect 9 routes
+cd contracts && forge test          # 46 tests
+cd .. && npm run deploy             # writes NEXT_PUBLIC_ARENA_CONTRACT to .env.local
 ```
 
----
+Set `OPERATOR_ADDRESS` to the address of `HOUSE_PRIVATE_KEY` before deploying.
+The deployer becomes the **owner** and should not be the same key as the
+operator: the key sitting in a serverless environment variable should not also
+be the key that can hand ownership away.
 
-## 💰 Funding maths — read this before running an event
-
-This is the thing most likely to kill a live demo, and it is a **logistics**
-problem, not a code problem.
-
-You pay for the gas limit, not gas used. At a base fee of ~102 gwei and a
-measured steady-state `spray()`:
-
-| | |
-|---|---|
-| gas per tap | ~0.0063 MON |
-| 200 taps per burner | ~1.27 MON |
-| **130 burners × 200 taps** | **~165 MON** |
-
-The public faucet drips small amounts per day, so **the master wallet cannot be
-filled on the morning of the event.** Fund it days in advance across multiple
-claims, or ask the Monad team for a testnet grant.
-
-Two things reduce the number:
-
-- **Funding is lazy.** `/api/fund` tops burners up when they run low rather than
-  granting everyone a fixed amount up front. Of 130 people who scan, only some
-  tap hard — so MON follows actual tapping.
-- **The sprayed value is not burned.** Only gas is. Sprays accumulate in the
-  contract and `/api/payout` sweeps them to the recipient every 10 seconds.
-
-Verify the wallet by reading its balance, never by assuming:
+### Before going public
 
 ```bash
 npm run preflight
 ```
 
----
-
-## 🌐 RPC pool
-
-Clients are assigned an endpoint deterministically by hashing their burner
-address, weighted by published capacity, so load spreads instead of 130 phones
-landing on QuickNode. On repeated 429s a client rotates to the next endpoint and
-widens its batch window.
-
-| endpoint | rps | batch |
-|---|---|---|
-| QuickNode `testnet-rpc.monad.xyz` | 50 | 100 |
-| Ankr `rpc.ankr.com/monad_testnet` | 30 | 100 |
-| Monad Foundation `rpc-testnet.monadinfra.com` | 20 | **none** |
-
-Set `NEXT_PUBLIC_RPC_PRIMARY` to a dedicated key (Alchemy, QuickNode and
-thirdweb all offer a free Monad testnet key) and every client is assigned there,
-with the public pool as failover. **Public endpoints are the fallback, not the
-plan.**
+Reads real state rather than assuming: chain reachable, contract has code, house
+wallet balance against a day's worth of players, Upstash reachable, both
+Turnstile keys present, no `.env` in git history.
 
 ---
 
-## 🧰 Scripts
-
-| command | what it does |
-|---|---|
-| `npm run dev` | the app |
-| `npm run preflight` | pre-demo checklist — reads real chain state |
-| `npm run bench` | measures tap-path latency and the offline demo feed |
-| `npm run rate-check` | simulates 130 clients against the endpoint pool |
-| `npm run load-test` | fires real sprays from funded burners; `--dry` to skip spending |
-| `npm run create-party "Name" 0xRecipient` | opens a party from the CLI in ten seconds |
-| `npx tsx scripts/test-resilience.ts` | forces a 429 and a dead relay, checks recovery |
-| `npm run contracts:test` | 21 contract tests |
-| `npm run contracts:gas` | gas report plus the honest per-case measurement |
-
----
-
-## 🎨 Design
-
-**Nigerian party at night, not crypto dashboard.**
-
-The token set in [`app/globals.css`](app/globals.css) is authoritative and
-[`/styleguide`](https://onchain-spray.vercel.app/styleguide) renders all of it —
-every colour, both type scales at real size, chip states, the note sprite, and a
-tabular-figures proof. If something on screen uses a value that is not on that
-page, the component is wrong.
-
-Gold is reserved for the tx/sec readout and the big-spray takeover. Never pure
-black, never pure white. Every changing number is `tabular-nums`.
-
-Banned on sight: purple-blue web3 gradients, glassmorphism, untouched shadcn
-defaults, stock crypto iconography, chain logos as decoration, animated
-node-network backgrounds.
-
----
-
-## 🛠 Stack
+## Scripts
 
 | | |
 |---|---|
-| **Framework** | Next.js 15 App Router · TypeScript strict · Tailwind v4 |
-| **Chain** | viem only — no wagmi, no ethers, no RainbowKit |
-| **Contracts** | Foundry |
-| **Rendering** | Canvas 2D particle pool — not DOM, not GSAP |
-| **Network** | Monad testnet (10143) |
-
-No auth. No accounts. No database. No admin panel. No mainnet. No token.
+| `npm run bench` | measures the synchronous cost of a tap, and the offline pipeline |
+| `npm run preflight` | faucet readiness check — run before every deploy |
+| `npm run contracts:gas` | the gas table above, regenerated |
+| `npm run load-test` | funds N burners, fires M taps, reports landed/dropped/429s |
+| `npm run rate-check` | probes the published RPC rate limits |
+| `/styleguide` | every design token, rendered — how palette drift gets caught |
 
 ---
 
-## 📄 Licence
+## Stack
 
-MIT — see [LICENSE](LICENSE).
+Next.js 15 · TypeScript strict · Tailwind v4 · viem · Foundry · Canvas 2D ·
+Upstash Redis · Cloudflare Turnstile
+
+No wagmi, no ethers, no RainbowKit, no DOM particles.
+
+[`CLAUDE.md`](CLAUDE.md) is the constitution for the build — every decision in
+this repo defers to it.
+
+---
+
+## License
+
+MIT
